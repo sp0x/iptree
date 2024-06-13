@@ -1,0 +1,4 @@
+# Gitignore for zig
+zig-cache
+.zig-cache
+zig-out
