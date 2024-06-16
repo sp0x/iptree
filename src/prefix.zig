@@ -1,29 +1,29 @@
 const std = @import("std");
-
-const PrefixAddress = union {
-    sin: std.net.Address.IPv4,
-    sin6: std.net.Address.IPv6,
-};
+const math = std.math;
+const posix = std.posix;
 
 pub const Prefix = struct {
     family: u32,
     bitlen: u32,
-    addr: PrefixAddress,
+    addr: std.net.Address,
+
+    // Create a new prefix using an address, byte array for the IP address and a network mask
+    pub fn fromFamily(family: u32, addr: []const u8, mask: u8) Prefix {
+        const maxMaskValue: u8 = if (family == posix.AF.INET) @as(u8, 32) else @as(u8, 128);
+        const targetMaskValue = std.math.min(mask, maxMaskValue);
+
+        const addressByteCount = if (family == posix.AF.INET) 4 else 16;
+        const buffer: [addressByteCount]u8 = undefined;
+
+        std.posix.net.inet_pton(family, addr, buffer);
+
+        return Prefix{ .family = family, .bitlen = targetMaskValue, .add = buffer };
+    }
 };
 
-// Create a new prefix using an address, byte array for the IP address and a network mask
-pub fn fromFamily(family: u32, addr: []u8, mask: i8) Prefix {
-    const maxMaskValue: u8 = if (family == std.net.Address.Family.IPv4) 32 else 128;
-    if (mask < 0) {
-        mask = maxMaskValue;
-    }
-
-    return Prefix{ .family = family, .bitlen = mask, .add = addr };
-}
-
 test "prefix" {
-    const prefix = fromFamily(std.net.Address.Family.IPv4, &.{ 192, 168, 1, 1 }, 24);
-    std.testing.expect(prefix.family == std.net.Address.Family.IPv4);
+    const prefix = Prefix.fromFamily(posix.AF.INET, "192.168.0.0", 24);
+    std.testing.expect(prefix.family == posix.AF.INET);
     std.testing.expect(prefix.bitlen == 24);
     std.testing.expect(prefix.addr.sin.addr[0] == 1);
 }
