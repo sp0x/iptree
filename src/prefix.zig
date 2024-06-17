@@ -1,5 +1,4 @@
 const std = @import("std");
-const inet = @cImport(@cInclude("arpa/inet.h"));
 const expect = std.testing.expect;
 const Address = std.net.Address;
 const posix = std.posix;
