@@ -1,13 +1,16 @@
 const std = @import("std");
-const RadixTree = @import("radixTree.zig").RadixTree;
+const mem = std.mem;
+const Prefix = @import("prefix.zig").Prefix;
 
 pub fn main() !void {
+    const prefix = try Prefix.fromFamily(std.posix.AF.INET, "192.168.0.0", 24);
+    const prefix2 = try Prefix.fromFamily(std.posix.AF.INET, "192.168.0.1", 24);
+
+    std.debug.print("{d} {d}\n", .{ prefix.asNumber(), prefix2.asNumber() });
+
+    // 8:45 - 9:35
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
-    RadixTree{
-        .head = null,
-    };
 
     // stdout is for the actual output of your application, for example if you
     // are implementing gzip, then only the compressed bytes should be sent to
