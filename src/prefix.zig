@@ -5,12 +5,16 @@ const posix = std.posix;
 const math = std.math;
 
 pub const Prefix = struct {
-    family: u8,
-    bitlen: u32,
+    family: u8 = posix.AF.INET,
+    networkBits: u8 = 0,
     address: Address,
 
     pub fn isEmpty(self: *const Prefix) bool {
         return self.address.in.sa.addr == 0;
+    }
+
+    pub fn empty() Prefix {
+        return Prefix{ .family = posix.AF.INET, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
     }
 
     // Create a new prefix using an address, byte array for the IP address and a network mask
@@ -23,7 +27,7 @@ pub const Prefix = struct {
         var ipAddress = try Address.parseIp(addr, 0);
         ipAddress = sanitizeMask(ipAddress, mask, maxMaskValue);
 
-        return Prefix{ .family = family, .bitlen = targetMaskValue, .address = ipAddress };
+        return Prefix{ .family = family, .networkBits = targetMaskValue, .address = ipAddress };
     }
 
     pub fn asNumber(self: *const Prefix) u32 {
@@ -31,12 +35,16 @@ pub const Prefix = struct {
         return std.mem.readInt(u32, bytes, .big);
     }
 
+    pub fn asBytes(self: *const Prefix) []const u8 {
+        return std.mem.asBytes(&self.address.in.sa.addr);
+    }
+
     pub fn isSupersetOf(self: *const Prefix, other: Prefix) bool {
         if (other.family != self.family)
             return false;
 
-        const mask = self.bitlen / 8;
-        const maskBits = self.bitlen % 8;
+        const mask = self.networkBits / 8;
+        const maskBits = self.networkBits % 8;
         const isv4 = self.family == posix.AF.INET;
         const otherBytes = if (isv4) std.mem.asBytes(&other.address.in.sa.addr) else std.mem.asBytes(&other.address.in6.sa.addr);
         const selfBytes = if (isv4) std.mem.asBytes(&self.address.in.sa.addr) else std.mem.asBytes(&self.address.in6.sa.addr);
@@ -60,8 +68,8 @@ pub const Prefix = struct {
             return false;
         }
 
-        const mask = other.bitlen / 8;
-        const maskBits = other.bitlen % 8;
+        const mask = other.networkBits / 8;
+        const maskBits = other.networkBits % 8;
         const isv4 = self.family == posix.AF.INET;
         const otherBytes = if (isv4) std.mem.asBytes(&other.address.in.sa.addr) else std.mem.asBytes(&other.address.in6.sa.addr);
         const selfBytes = if (isv4) std.mem.asBytes(&self.address.in.sa.addr) else std.mem.asBytes(&self.address.in6.sa.addr);
@@ -107,12 +115,12 @@ fn sanitizeMask(addr: Address, masklen: u8, maskbits: u8) Address {
 test "prefix" {
     const prefix = try Prefix.fromFamily(posix.AF.INET, "192.168.0.0", 24);
     try expect(prefix.family == posix.AF.INET);
-    try expect(prefix.bitlen == 24);
+    try expect(prefix.networkBits == 24);
     try expect(prefix.address.in.sa.addr == 43200);
 }
 
 test "empty prefix construction" {
-    const pfx: Prefix = Prefix{ .family = posix.AF.INET, .bitlen = 0, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
+    const pfx: Prefix = Prefix{ .family = posix.AF.INET, .networkBits = 0, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
     try expect(pfx.isEmpty());
 }
 
