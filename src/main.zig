@@ -1,7 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const Prefix = @import("prefix.zig").Prefix;
-const RadixTree = @import("radix_tree.zig").RadixTree;
+const RadixTree = @import("radixTree.zig").RadixTree;
 
 pub fn main() !void {
     // stdout is for the actual output of your application, for example if you
@@ -11,15 +11,14 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    var tree = RadixTree{
-        .head = null,
-        .numberOfNodes = 0,
-    };
+    var tree = RadixTree{};
     const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.0.0.0", 8);
     const pfx2 = try Prefix.fromFamily(std.posix.AF.INET, "2.0.0.0", 8);
     var isAddition: bool = false;
-    tree.insertPrefix(pfx, &isAddition);
-    tree.insertPrefix(pfx2, &isAddition);
+    var n1 = tree.insertPrefix(pfx, &isAddition);
+    var n2 = tree.insertPrefix(pfx2, &isAddition);
+    n1.?.data = .{ .asn = 5 };
+    n2.?.data = .{ .datacenter = true };
 
     try stdout.print("Run `zig build test` to run the tests.\n", .{});
 

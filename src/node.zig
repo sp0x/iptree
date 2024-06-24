@@ -3,8 +3,8 @@ const std = @import("std");
 const expect = std.testing.expect;
 
 pub const NodeData = struct {
-    asn: ?u32,
-    datacenter: ?bool,
+    asn: ?u32 = null,
+    datacenter: ?bool = null,
 
     inline fn mergeValues(comptime T: type, self_value: ?T, other_value: ?T, overwrite: bool) ?T {
         return if (other_value) |value|

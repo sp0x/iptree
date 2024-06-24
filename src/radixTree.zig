@@ -3,12 +3,13 @@ const math = std.math;
 const expect = std.testing.expect;
 const Prefix = @import("prefix.zig").Prefix;
 const Node = @import("node.zig").Node;
+const NodeData = @import("node.zig").NodeData;
 const newPrefix = @import("prefix.zig").newPrefix;
 
 const maxBits: u8 = 128;
 
 pub const RadixTree = struct {
-    head: ?*Node,
+    head: ?*Node = null,
     numberOfNodes: u32 = 0,
 
     fn initializeHead(self: *RadixTree, prefix: Prefix) void {
@@ -158,10 +159,115 @@ pub const RadixTree = struct {
 
         return &newNode;
     }
+
+    pub fn searchExact(self: *RadixTree, prefix: Prefix) ?*Node {
+        var currentNode = self.head orelse return null;
+        const addressBytes = prefix.asBytes();
+        const bitLength = prefix.networkBits;
+
+        while (currentNode.networkBits < bitLength) {
+            const bitIndex = currentNode.networkBits >> 3;
+            const bitMask = math.shr(u8, 0x80, currentNode.networkBits & 0x07);
+            if (testBits(addressBytes[bitIndex], bitMask)) {
+                currentNode = currentNode.right orelse return null;
+            } else {
+                currentNode = currentNode.left orelse return null;
+            }
+        }
+
+        if (currentNode.networkBits > bitLength || currentNode.prefix.isEmpty) {
+            return null;
+        }
+
+        const currentPrefixBytes = currentNode.prefix.asBytes();
+        if (compareAddressesWithMask(currentPrefixBytes, addressBytes, bitLength)) {
+            return currentNode;
+        }
+
+        return null;
+    }
+
+    pub fn searchBest(self: *RadixTree, prefix: Prefix, mergeResult: *?NodeData, collectMergeData: bool) ?*Node {
+        var stack = std.ArrayList(*Node).init(std.heap.page_allocator);
+        defer stack.deinit();
+
+        var node = self._head;
+        if (node == null) return null;
+
+        const address = prefix.ipAddress;
+        const bitlen = prefix.networkBits;
+
+        while (node.?.networkBits < bitlen) {
+            if (!node.?.prefix.isEmpty) {
+                stack.append(node.?) catch return null;
+            }
+
+            if (testBits(address[node.?.networkBits >> 3], u8(0x80) >> (node.?.networkBits & 0x07))) {
+                node = node.?.right;
+            } else {
+                node = node.?.left;
+            }
+
+            if (node == null) break;
+        }
+
+        if (node != null and !node.?.prefix.isEmpty) {
+            stack.append(node.?) catch return null;
+        }
+
+        while (stack.items.len > 0) {
+            node = stack.pop();
+
+            const doPrefixesMatch = compareAddressesWithMask(address, node.?.prefix.ipAddress, node.?.prefix.networkBits);
+
+            if (doPrefixesMatch and node.?.prefix.networkBits <= bitlen) {
+                if (collectMergeData) {
+                    mergeResult.* = mergeParentStack(node.?, stack);
+                }
+
+                return node;
+            }
+        }
+
+        return null;
+    }
 };
+
+fn mergeParentStack(leafNode: *Node, stack: *std.ArrayList(*Node)) ?*NodeData {
+    var mergeResult: ?*NodeData = leafNode.data;
+
+    while (stack.items.len > 0) {
+        const parent = stack.pop();
+
+        if (mergeResult == null or !mergeResult.?.isComplete()) {
+            mergeOrSwap(&mergeResult, parent.data, false);
+        } else {
+            break;
+        }
+    }
+
+    return mergeResult;
+}
 
 fn testBits(byte: u8, mask: u8) bool {
     return byte & mask == mask;
+}
+
+pub fn compareAddressesWithMask(address: []const u8, dest: []const u8, mask: u32) bool {
+    const segmentLength = mask / 8;
+    const addressSegment = address[0..segmentLength];
+    const destSegment = dest[0..segmentLength];
+
+    if (std.mem.eql(u8, addressSegment, destSegment)) {
+        const n = segmentLength;
+        const m = math.shl(u8, 255, (8 - (mask % 8))) & 0xFF;
+
+        if (mask % 8 == 0 or ((address[n] & m) == (dest[n] & m))) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 comptime {
@@ -169,18 +275,31 @@ comptime {
 }
 
 test "construction" {
-    var tree = RadixTree{
-        .head = null,
-        .numberOfNodes = 0,
-    };
+    var tree = RadixTree{};
     const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.0.0.0", 8);
     const pfx2 = try Prefix.fromFamily(std.posix.AF.INET, "2.0.0.0", 8);
     var isAddition: bool = false;
-    const newNode = tree.insertPrefix(pfx, &isAddition);
-    const newNode2 = tree.insertPrefix(pfx2, &isAddition);
-    std.debug.print("newNode: {}\n", .{tree});
-    try expect(newNode != null);
-    try expect(newNode2 != null);
+    const n1 = tree.insertPrefix(pfx, &isAddition);
+    const n2 = tree.insertPrefix(pfx2, &isAddition);
+    n1.?.data = .{ .asn = 5 };
+    n2.?.data = .{ .datacenter = true };
+
+    try expect(n1 != null);
+    try expect(n2 != null);
     try expect(tree.head != null);
     try expect(tree.numberOfNodes == 3);
+}
+
+test "addition or update when adding" {
+    var tree = RadixTree{};
+    const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.0.0.0", 8);
+    const pfx2 = try Prefix.fromFamily(std.posix.AF.INET, "2.0.0.0", 8);
+
+    var isAddition: bool = false;
+    _ = tree.insertPrefix(pfx, &isAddition);
+    try expect(isAddition == true);
+    _ = tree.insertPrefix(pfx2, &isAddition);
+    try expect(isAddition == true);
+    _ = tree.insertPrefix(pfx2, &isAddition);
+    try expect(isAddition == false);
 }
