@@ -12,15 +12,15 @@ pub fn main() !void {
     const stdout = bw.writer();
 
     var tree = RadixTree{};
-    const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.0.0.0", 8);
-    const pfx2 = try Prefix.fromFamily(std.posix.AF.INET, "2.0.0.0", 8);
-    var isAddition: bool = false;
-    var n1 = tree.insertPrefix(pfx, &isAddition);
-    var n2 = tree.insertPrefix(pfx2, &isAddition);
-    n1.?.data = .{ .asn = 5 };
-    n2.?.data = .{ .datacenter = true };
+    const parent = try Prefix.fromCidr("1.0.0.0/8");
+    const child = try Prefix.fromCidr("1.0.0.0/16");
+    tree.insertPrefix(parent).?.data = .{ .asn = 5 };
+    tree.insertPrefix(child).?.data = .{ .datacenter = true };
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const prefixTolookup = try Prefix.fromCidr("1.1.1.0/32");
+    const result = tree.searchBest(prefixTolookup) orelse unreachable;
+
+    try stdout.print("Search result {}.\n", .{result});
 
     try bw.flush(); // don't forget to flush!
 }

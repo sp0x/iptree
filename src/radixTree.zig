@@ -8,6 +8,8 @@ const newPrefix = @import("prefix.zig").newPrefix;
 
 const maxBits: u8 = 128;
 
+pub const SearchResult = struct { node: ?*Node, completeData: ?NodeData };
+
 pub const RadixTree = struct {
     head: ?*Node = null,
     numberOfNodes: u32 = 0,
@@ -25,13 +27,11 @@ pub const RadixTree = struct {
         self.numberOfNodes += 1;
     }
 
-    pub fn insertPrefix(self: *RadixTree, prefix: Prefix, isAddition: *bool) ?*Node {
+    pub fn insertPrefix(self: *RadixTree, prefix: Prefix) ?*Node {
         if (self.head == null) {
-            isAddition.* = true;
             self.initializeHead(prefix);
             return self.head;
         }
-        isAddition.* = false;
 
         const addressBytes = prefix.asBytes();
         const newPrefixNetworkBits = prefix.networkBits;
@@ -81,7 +81,6 @@ pub const RadixTree = struct {
             if (currentNode.prefix.isEmpty()) {
                 currentNode.prefix = prefix; // try prefix.clone();
             }
-            isAddition.* = false;
             return currentNode;
         }
 
@@ -94,7 +93,6 @@ pub const RadixTree = struct {
             .data = undefined,
         };
         self.numberOfNodes += 1;
-        isAddition.* = true;
 
         if (currentNode.networkBits == differBit) {
             newNode.parent = currentNode;
@@ -187,22 +185,24 @@ pub const RadixTree = struct {
         return null;
     }
 
-    pub fn searchBest(self: *RadixTree, prefix: Prefix, mergeResult: *?NodeData, collectMergeData: bool) ?*Node {
+    pub fn searchBest(self: *RadixTree, prefix: Prefix) ?SearchResult {
         var stack = std.ArrayList(*Node).init(std.heap.page_allocator);
         defer stack.deinit();
+        if (self.head == null) {
+            return null;
+        }
 
-        var node = self._head;
-        if (node == null) return null;
+        var node: ?*Node = self.head;
 
-        const address = prefix.ipAddress;
+        const addressBytes = prefix.asBytes();
         const bitlen = prefix.networkBits;
 
         while (node.?.networkBits < bitlen) {
-            if (!node.?.prefix.isEmpty) {
+            if (!node.?.prefix.isEmpty()) {
                 stack.append(node.?) catch return null;
             }
 
-            if (testBits(address[node.?.networkBits >> 3], u8(0x80) >> (node.?.networkBits & 0x07))) {
+            if (testBits(addressBytes[node.?.networkBits >> 3], math.shr(u8, 0x80, node.?.networkBits & 0x07))) {
                 node = node.?.right;
             } else {
                 node = node.?.left;
@@ -211,21 +211,22 @@ pub const RadixTree = struct {
             if (node == null) break;
         }
 
-        if (node != null and !node.?.prefix.isEmpty) {
+        if (node != null and !node.?.prefix.isEmpty()) {
             stack.append(node.?) catch return null;
         }
 
         while (stack.items.len > 0) {
             node = stack.pop();
-
-            const doPrefixesMatch = compareAddressesWithMask(address, node.?.prefix.ipAddress, node.?.prefix.networkBits);
+            const nodeAddrBytes = node.?.prefix.asBytes();
+            const doPrefixesMatch = compareAddressesWithMask(addressBytes, nodeAddrBytes, node.?.prefix.networkBits);
 
             if (doPrefixesMatch and node.?.prefix.networkBits <= bitlen) {
-                if (collectMergeData) {
-                    mergeResult.* = mergeParentStack(node.?, stack);
-                }
+                const mergeResult = mergeParentStack(node.?, &stack);
 
-                return node;
+                return .{
+                    .node = node,
+                    .completeData = mergeResult,
+                };
             }
         }
 
@@ -233,20 +234,32 @@ pub const RadixTree = struct {
     }
 };
 
-fn mergeParentStack(leafNode: *Node, stack: *std.ArrayList(*Node)) ?*NodeData {
-    var mergeResult: ?*NodeData = leafNode.data;
+fn mergeParentStack(leafNode: *Node, stack: *std.ArrayList(*Node)) ?NodeData {
+    var mergeResult: ?NodeData = leafNode.data;
 
     while (stack.items.len > 0) {
         const parent = stack.pop();
 
         if (mergeResult == null or !mergeResult.?.isComplete()) {
-            mergeOrSwap(&mergeResult, parent.data, false);
+            mergeResult = mergeOrSwap(mergeResult, parent.data, false);
         } else {
             break;
         }
     }
 
     return mergeResult;
+}
+
+fn mergeOrSwap(dest: ?NodeData, src: ?NodeData, overwrite: bool) ?NodeData {
+    if (src == null) {
+        return dest;
+    }
+
+    if (dest == null) {
+        return src;
+    }
+
+    return dest.?.merge(src.?, overwrite);
 }
 
 fn testBits(byte: u8, mask: u8) bool {
@@ -276,11 +289,10 @@ comptime {
 
 test "construction" {
     var tree = RadixTree{};
-    const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.0.0.0", 8);
-    const pfx2 = try Prefix.fromFamily(std.posix.AF.INET, "2.0.0.0", 8);
-    var isAddition: bool = false;
-    const n1 = tree.insertPrefix(pfx, &isAddition);
-    const n2 = tree.insertPrefix(pfx2, &isAddition);
+    const pfx = try Prefix.fromCidr("1.0.0.0/8");
+    const pfx2 = try Prefix.fromCidr("2.0.0.0/8");
+    const n1 = tree.insertPrefix(pfx);
+    const n2 = tree.insertPrefix(pfx2);
     n1.?.data = .{ .asn = 5 };
     n2.?.data = .{ .datacenter = true };
 
@@ -292,14 +304,24 @@ test "construction" {
 
 test "addition or update when adding" {
     var tree = RadixTree{};
-    const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.0.0.0", 8);
-    const pfx2 = try Prefix.fromFamily(std.posix.AF.INET, "2.0.0.0", 8);
+    const pfx = try Prefix.fromCidr("1.0.0.0/8");
+    const pfx2 = try Prefix.fromCidr("2.0.0.0/8");
 
-    var isAddition: bool = false;
-    _ = tree.insertPrefix(pfx, &isAddition);
-    try expect(isAddition == true);
-    _ = tree.insertPrefix(pfx2, &isAddition);
-    try expect(isAddition == true);
-    _ = tree.insertPrefix(pfx2, &isAddition);
-    try expect(isAddition == false);
+    _ = tree.insertPrefix(pfx);
+    _ = tree.insertPrefix(pfx2);
+    _ = tree.insertPrefix(pfx2);
+}
+
+test "when parent has more data then data should be merged in" {
+    var tree = RadixTree{};
+    const parent = try Prefix.fromCidr("1.0.0.0/8");
+    const child = try Prefix.fromCidr("1.0.0.0/16");
+    tree.insertPrefix(parent).?.data = .{ .asn = 5 };
+    tree.insertPrefix(child).?.data = .{ .datacenter = true };
+
+    const result = tree.searchBest(try Prefix.fromCidr("1.1.1.0/32")) orelse unreachable;
+    try expect(result.node != null);
+    try expect(result.node.?.data != null);
+    try expect(result.node.?.data.?.asn == 5);
+    try expect(result.node.?.data.?.datacenter == true);
 }

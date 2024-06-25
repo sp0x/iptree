@@ -17,6 +17,21 @@ pub const Prefix = struct {
         return Prefix{ .family = posix.AF.INET, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
     }
 
+    pub fn fromCidr(cidr: []const u8) !Prefix {
+        var addr: []const u8 = undefined;
+        var mask: u8 = 0;
+        const slashPosition = std.mem.indexOf(u8, cidr, "/");
+        if (slashPosition == null) {
+            addr = cidr;
+            mask = 0;
+        } else {
+            addr = cidr[0..slashPosition.?];
+            mask = try std.fmt.parseInt(u8, cidr[slashPosition.? + 1 ..], 10);
+        }
+
+        return try Prefix.fromFamily(posix.AF.INET, addr, mask);
+    }
+
     // Create a new prefix using an address, byte array for the IP address and a network mask
     pub fn fromFamily(family: u8, addr: []const u8, mask: u8) !Prefix {
         const maxMaskValue: u8 = if (family == posix.AF.INET) @as(u8, 32) else @as(u8, 128);

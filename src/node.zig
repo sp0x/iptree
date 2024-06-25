@@ -13,6 +13,10 @@ pub const NodeData = struct {
             self_value;
     }
 
+    pub fn isComplete(self: *const NodeData) bool {
+        return self.asn != null and self.datacenter != null;
+    }
+
     pub fn merge(self: *const NodeData, other: NodeData, overwrite: bool) NodeData {
         return NodeData{
             .asn = mergeValues(u32, self.asn, other.asn, overwrite),
