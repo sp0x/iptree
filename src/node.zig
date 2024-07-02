@@ -35,7 +35,7 @@ pub const Node = struct {
 };
 
 test "Node" {
-    const pfx = try Prefix.fromFamily(std.posix.AF.INET, "1.1.1.1", 0);
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 0);
     const node = Node{
         .prefix = pfx,
         .parent = null,

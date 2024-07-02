@@ -3,6 +3,7 @@ const expect = std.testing.expect;
 const Address = std.net.Address;
 const posix = std.posix;
 const math = std.math;
+const utils = @import("utils.zig");
 
 pub const Prefix = struct {
     family: u8 = posix.AF.INET,
@@ -29,11 +30,12 @@ pub const Prefix = struct {
             mask = try std.fmt.parseInt(u8, cidr[slashPosition.? + 1 ..], 10);
         }
 
-        return try Prefix.fromFamily(posix.AF.INET, addr, mask);
+        return try Prefix.fromIpAndMask(addr, mask);
     }
 
     // Create a new prefix using an address, byte array for the IP address and a network mask
-    pub fn fromFamily(family: u8, addr: []const u8, mask: u8) !Prefix {
+    pub fn fromIpAndMask(addr: []const u8, mask: u8) !Prefix {
+        const family = utils.resolveFamily(addr);
         const maxMaskValue: u8 = if (family == posix.AF.INET) @as(u8, 32) else @as(u8, 128);
         var targetMaskValue = mask;
         if (mask > maxMaskValue) {
@@ -128,7 +130,7 @@ fn sanitizeMask(addr: Address, masklen: u8, maskbits: u8) Address {
 }
 
 test "prefix" {
-    const prefix = try Prefix.fromFamily(posix.AF.INET, "192.168.0.0", 24);
+    const prefix = try Prefix.fromIpAndMask("192.168.0.0", 24);
     try expect(prefix.family == posix.AF.INET);
     try expect(prefix.networkBits == 24);
     try expect(prefix.address.in.sa.addr == 43200);
@@ -140,22 +142,22 @@ test "empty prefix construction" {
 }
 
 test "prefixes should be sanitized correctly" {
-    const prefix = try Prefix.fromFamily(posix.AF.INET, "192.168.0.0", 24);
-    const prefix2 = try Prefix.fromFamily(posix.AF.INET, "192.168.0.1", 24);
+    const prefix = try Prefix.fromIpAndMask("192.168.0.0", 24);
+    const prefix2 = try Prefix.fromIpAndMask("192.168.0.1", 24);
     try expect(prefix.asNumber() == prefix2.asNumber());
 }
 
 test "prefixes should be able to be subsets" {
-    const widerPrefix = try Prefix.fromFamily(posix.AF.INET, "1.0.0.0", 8);
-    const narrowerPrefix = try Prefix.fromFamily(posix.AF.INET, "1.1.0.0", 16);
+    const widerPrefix = try Prefix.fromIpAndMask("1.0.0.0", 8);
+    const narrowerPrefix = try Prefix.fromIpAndMask("1.1.0.0", 16);
 
     try expect(narrowerPrefix.isSubsetOf(widerPrefix));
     try expect(!widerPrefix.isSubsetOf(narrowerPrefix));
 }
 
 test "prefixes should be able to be supersets" {
-    const widerPrefix = try Prefix.fromFamily(posix.AF.INET, "1.0.0.0", 8);
-    const narrowerPrefix = try Prefix.fromFamily(posix.AF.INET, "1.1.0.0", 16);
+    const widerPrefix = try Prefix.fromIpAndMask("1.0.0.0", 8);
+    const narrowerPrefix = try Prefix.fromIpAndMask("1.1.0.0", 16);
 
     try expect(widerPrefix.isSupersetOf(narrowerPrefix));
     try expect(!narrowerPrefix.isSupersetOf(widerPrefix));

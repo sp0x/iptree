@@ -4,7 +4,6 @@ const expect = std.testing.expect;
 const Prefix = @import("prefix.zig").Prefix;
 const Node = @import("node.zig").Node;
 const NodeData = @import("node.zig").NodeData;
-const newPrefix = @import("prefix.zig").newPrefix;
 
 const maxBits: u8 = 128;
 
@@ -319,9 +318,12 @@ test "when parent has more data then data should be merged in" {
     tree.insertPrefix(parent).?.data = .{ .asn = 5 };
     tree.insertPrefix(child).?.data = .{ .datacenter = true };
 
-    const result = tree.searchBest(try Prefix.fromCidr("1.1.1.0/32")) orelse unreachable;
-    try expect(result.node != null);
-    try expect(result.node.?.data != null);
-    try expect(result.node.?.data.?.asn == 5);
-    try expect(result.node.?.data.?.datacenter == true);
+    const pfx = try Prefix.fromCidr("1.1.1.0/32");
+    // std.debug.print("{}", .{pfx});
+    const result = tree.searchBest(pfx);
+    try expect(result != null);
+    try expect(result.?.node != null);
+    try expect(result.?.node.?.data != null);
+    try expect(result.?.node.?.data.?.asn == 5);
+    try expect(result.?.node.?.data.?.datacenter == true);
 }
