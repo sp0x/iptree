@@ -44,6 +44,10 @@ pub const Prefix = struct {
         var ipAddress = try Address.parseIp(addr, 0);
         ipAddress = sanitizeMask(ipAddress, mask, maxMaskValue);
 
+        if (targetMaskValue > 128) {
+            return error.OutOfBands;
+        }
+
         return Prefix{ .family = family, .networkBits = targetMaskValue, .address = ipAddress };
     }
 

@@ -13,7 +13,11 @@ pub const RadixTree = struct {
     head: ?*Node = null,
     numberOfNodes: u32 = 0,
 
-    fn initializeHead(self: *RadixTree, prefix: Prefix) void {
+    fn initializeHead(self: *RadixTree, prefix: Prefix) !void {
+        if (prefix.networkBits > 128) {
+            return error.OutOfRange;
+        }
+
         var newNode = Node{
             .networkBits = prefix.networkBits,
             .prefix = prefix, // try prefix.clone(),
@@ -28,7 +32,10 @@ pub const RadixTree = struct {
 
     pub fn insertPrefix(self: *RadixTree, prefix: Prefix) ?*Node {
         if (self.head == null) {
-            self.initializeHead(prefix);
+            self.initializeHead(prefix) catch |err| {
+                std.debug.print("error during head initialization: {}\n", .{err});
+                return null;
+            };
             return self.head;
         }
 
@@ -195,16 +202,19 @@ pub const RadixTree = struct {
 
         const addressBytes = prefix.asBytes();
         const bitlen = prefix.networkBits;
-
+        std.debug.print("searchBest: {}\n", .{bitlen});
         while (node.?.networkBits < bitlen) {
-            if (!node.?.prefix.isEmpty()) {
-                stack.append(node.?) catch return null;
+            const snode = node.?.*;
+            std.debug.print("current {}", .{snode});
+            if (!snode.prefix.isEmpty()) {
+                stack.append(node orelse unreachable) catch return null;
             }
 
-            if (testBits(addressBytes[node.?.networkBits >> 3], math.shr(u8, 0x80, node.?.networkBits & 0x07))) {
-                node = node.?.right;
+            std.debug.print("tmp node network bits: {}\n", .{snode.networkBits});
+            if (testBits(addressBytes[snode.networkBits >> 3], math.shr(u8, 0x80, snode.networkBits & 0x07))) {
+                node = snode.right;
             } else {
-                node = node.?.left;
+                node = snode.left;
             }
 
             if (node == null) break;
@@ -213,17 +223,19 @@ pub const RadixTree = struct {
         if (node != null and !node.?.prefix.isEmpty()) {
             stack.append(node.?) catch return null;
         }
-
+        std.debug.print("stack size: {}\n", .{stack.items.len});
         while (stack.items.len > 0) {
-            node = stack.pop();
-            const nodeAddrBytes = node.?.prefix.asBytes();
-            const doPrefixesMatch = compareAddressesWithMask(addressBytes, nodeAddrBytes, node.?.prefix.networkBits);
+            const snode = stack.pop();
+            std.debug.print("sb: {}\n", .{snode.networkBits});
+            const nodeAddrBytes = snode.prefix.asBytes();
 
-            if (doPrefixesMatch and node.?.prefix.networkBits <= bitlen) {
-                const mergeResult = mergeParentStack(node.?, &stack);
+            const doPrefixesMatch = compareAddressesWithMask(addressBytes, nodeAddrBytes, snode.prefix.networkBits);
+
+            if (doPrefixesMatch and snode.prefix.networkBits <= bitlen) {
+                const mergeResult = mergeParentStack(snode, &stack);
 
                 return .{
-                    .node = node,
+                    .node = snode,
                     .completeData = mergeResult,
                 };
             }
