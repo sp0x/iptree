@@ -6,6 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/zig-out/bin/iptree",
+            // "program": "${workspaceFolder}/.zig-cache/o/0d56b2cf403d6e3707a6a70cd628d689/test",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -20,6 +21,16 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug",
+            "program": "${workspaceFolder}/.zig-cache/o/e949a2f007257b2afaedecffa8d7de7b/test",
+            "args": [
+                "src/radixTree.zig"
+            ],
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

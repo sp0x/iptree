@@ -2,6 +2,8 @@ const std = @import("std");
 const mem = std.mem;
 const Prefix = @import("prefix.zig").Prefix;
 const RadixTree = @import("radixTree.zig").RadixTree;
+const IpTree = @import("ipTree.zig").IpTree;
+const NodeData = @import("node.zig").NodeData;
 
 pub fn main() !void {
     // stdout is for the actual output of your application, for example if you
@@ -10,6 +12,20 @@ pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
+
+    var ipTree = IpTree{};
+    const addr = "1.1.1.1";
+    const mask = 32;
+    const value = NodeData{ .asn = 1 };
+
+    try ipTree.insert(addr, mask, value);
+
+    const match = try ipTree.searchBest("1.1.1.1", 32);
+    if (match == null) {
+        std.debug.print("No match found.\n", .{});
+    } else {
+        std.debug.print("Match: {}\n", .{match.?});
+    }
 
     var tree = RadixTree{};
     const parent = try Prefix.fromCidr("1.0.0.0/8");

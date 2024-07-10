@@ -1,4 +1,6 @@
-const RadixTree = @import("radixTree.zig").RadixTree;
+const rxTree = @import("radixTree.zig");
+const RadixTree = rxTree.RadixTree;
+const SearchResult = rxTree.SearchResult;
 const Prefix = @import("prefix.zig").Prefix;
 const NodeData = @import("node.zig").NodeData;
 const std = @import("std");
@@ -16,10 +18,16 @@ pub const IpTree = struct {
         node.*.data = value;
     }
 
-    fn pickTree(self: *IpTree, family: u8) !RadixTree {
+    pub fn searchBest(self: *IpTree, addr: []const u8, mask: u8) !?SearchResult {
+        const prefix = try Prefix.fromIpAndMask(addr, mask);
+        const tree = try self.pickTree(prefix.family);
+        return tree.searchBest(prefix);
+    }
+
+    fn pickTree(self: *IpTree, family: u8) !*RadixTree {
         return switch (family) {
-            posix.AF.INET => return self.ipv4,
-            posix.AF.INET6 => return self.ipv6,
+            posix.AF.INET => return &self.ipv4,
+            posix.AF.INET6 => return &self.ipv6,
             else => return error.UnsupportedFamily,
         };
     }
