@@ -2,26 +2,24 @@ const Prefix = @import("prefix.zig").Prefix;
 const std = @import("std");
 const expect = std.testing.expect;
 
+inline fn mergeValues(comptime T: type, dest_value: ?T, source_value: ?T, overwrite: bool) ?T {
+    return if (source_value) |value|
+        (if (dest_value == null or overwrite) value else dest_value)
+    else
+        dest_value;
+}
+
 pub const NodeData = struct {
     asn: ?u32 = null,
     datacenter: ?bool = null,
-
-    inline fn mergeValues(comptime T: type, self_value: ?T, other_value: ?T, overwrite: bool) ?T {
-        return if (other_value) |value|
-            (if (self_value == null or overwrite) value else self_value)
-        else
-            self_value;
-    }
 
     pub fn isComplete(self: *const NodeData) bool {
         return self.asn != null and self.datacenter != null;
     }
 
-    pub fn merge(self: *const NodeData, other: NodeData, overwrite: bool) NodeData {
-        return NodeData{
-            .asn = mergeValues(u32, self.asn, other.asn, overwrite),
-            .datacenter = mergeValues(bool, self.datacenter, other.datacenter, overwrite),
-        };
+    pub fn merge(self: *NodeData, other: *const NodeData, overwrite: bool) void {
+        self.asn = mergeValues(u32, self.asn, other.asn, overwrite);
+        self.datacenter = mergeValues(bool, self.datacenter, other.datacenter, overwrite);
     }
 };
 
@@ -50,7 +48,7 @@ test "Node" {
 }
 
 test "Node merge" {
-    const nodeData1: NodeData = .{
+    var nodeData1: NodeData = .{
         .asn = 0,
         .datacenter = null,
     };
@@ -59,7 +57,8 @@ test "Node merge" {
         .datacenter = true,
     };
 
-    const mergeResult = nodeData1.merge(nodeData2, true);
-    try expect(mergeResult.asn == 0);
-    try expect(mergeResult.datacenter == true);
+    nodeData1.merge(&nodeData2, true);
+
+    try expect(nodeData1.asn == 0);
+    try expect(nodeData1.datacenter == true);
 }

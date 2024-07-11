@@ -273,7 +273,10 @@ fn mergeOrSwap(dest: ?NodeData, src: ?NodeData, overwrite: bool) ?NodeData {
         return src;
     }
 
-    return dest.?.merge(src.?, overwrite);
+    var nonNullDestination = dest orelse return null;
+
+    nonNullDestination.merge(&src.?, overwrite);
+    return dest;
 }
 
 fn testBits(byte: u8, mask: u8) bool {
