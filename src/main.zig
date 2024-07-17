@@ -13,30 +13,17 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    var ipTree = IpTree{};
-    const addr = "1.1.1.1";
-    const mask = 32;
-    const value = NodeData{ .asn = 1 };
-
-    try ipTree.insert(addr, mask, value);
-
-    const match = try ipTree.searchBest("1.1.1.1", 32);
-    if (match == null) {
-        std.debug.print("No match found.\n", .{});
-    } else {
-        std.debug.print("Match: {}\n", .{match.?});
-    }
-
     var tree = RadixTree{};
     const parent = try Prefix.fromCidr("1.0.0.0/8");
     const child = try Prefix.fromCidr("1.0.0.0/16");
     tree.insertPrefix(parent).?.data = .{ .asn = 5 };
     tree.insertPrefix(child).?.data = .{ .datacenter = true };
 
-    const prefixTolookup = try Prefix.fromCidr("1.1.1.0/32");
-    const result = tree.searchBest(prefixTolookup) orelse unreachable;
+    const pfx = try Prefix.fromCidr("1.1.1.0/32");
+    std.debug.print("{}\n", .{pfx});
+    const result = tree.searchBest(pfx);
 
-    try stdout.print("Search result {}.\n", .{result});
+    try stdout.print("Search result {}.\n", .{result.?});
 
     try bw.flush(); // don't forget to flush!
 }

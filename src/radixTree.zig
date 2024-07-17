@@ -10,15 +10,21 @@ const maxBits: u8 = 128;
 pub const SearchResult = struct { node: ?*Node, completeData: ?NodeData };
 
 pub const RadixTree = struct {
-    head: ?Node = null,
+    allocator: *std.mem.Allocator = std.heap.page_allocator,
+    head: ?*Node = null,
     numberOfNodes: u32 = 0,
+
+    pub fn init(allocator: *std.mem.Allocator) RadixTree {
+        return .{ .allocator = allocator };
+    }
 
     fn initializeHead(self: *RadixTree, prefix: Prefix) !*Node {
         if (prefix.networkBits > 128) {
             return error.OutOfRange;
         }
 
-        self.head = Node{
+        self.head = try self.allocator.create(Node);
+        self.head.* = Node{
             .networkBits = prefix.networkBits,
             .prefix = prefix,
             .parent = null,
@@ -103,9 +109,10 @@ pub const RadixTree = struct {
             newNode.parent = currentNode;
             const tmpMask: u8 = currentNode.networkBits & 0x07;
             if (currentNode.networkBits < maxBits and testBits(addressBytes[currentNode.networkBits >> 3], math.shr(u8, 0x80, tmpMask))) {
-                currentNode.right = &newNode;
+                // TODO: allocate a new node using a custom allocator
+                currentNode.right = newNode;
             } else {
-                currentNode.left = &newNode;
+                currentNode.left = newNode;
             }
             return &newNode;
         }
@@ -191,12 +198,12 @@ pub const RadixTree = struct {
     }
 
     pub fn searchBest(self: *RadixTree, prefix: Prefix) ?SearchResult {
-        var stack = std.ArrayList(*Node).init(std.heap.page_allocator);
-        defer stack.deinit();
         if (self.head == null) {
             return null;
         }
 
+        var stack = std.ArrayList(*Node).init(std.heap.page_allocator);
+        defer stack.deinit();
         var node: ?*Node = &self.head.?;
 
         const addressBytes = prefix.asBytes();
@@ -212,8 +219,10 @@ pub const RadixTree = struct {
 
             std.debug.print("tmp node network bits: {}\n", .{snode.networkBits});
             if (testBits(addressBytes[snode.networkBits >> 3], math.shr(u8, 0x80, snode.networkBits & 0x07))) {
+                // Possible issue here!
                 node = snode.right;
             } else {
+                // Or here
                 node = snode.left;
             }
 
@@ -245,6 +254,16 @@ pub const RadixTree = struct {
         }
 
         return null;
+    }
+
+    pub fn destroyNode(self: *RadixTree, node: *Node) void {
+        if (node.left) |left| {
+            self.destroyNode(left);
+        }
+        if (node.right) |right| {
+            self.destroyNode(right);
+        }
+        self.allocator.destroy(node);
     }
 };
 
@@ -285,6 +304,7 @@ fn testBits(byte: u8, mask: u8) bool {
 
 pub fn compareAddressesWithMask(address: []const u8, dest: []const u8, mask: u32) bool {
     const segmentLength = mask / 8;
+    std.debug.print("checking segment length {} {}\n", .{ mask, segmentLength });
     const addressSegment = address[0..segmentLength];
     const destSegment = dest[0..segmentLength];
 
@@ -305,7 +325,13 @@ comptime {
 }
 
 test "construction" {
-    var tree = RadixTree{};
+    const allocator = std.heap.page_allocator;
+    var tree = RadixTree.init(allocator);
+    defer {
+        tree.destroyNode(tree.head orelse unreachable);
+        // TODO:
+        // tree.destroy();
+    }
     const pfx = try Prefix.fromCidr("1.0.0.0/8");
     const n1 = tree.insertPrefix(pfx);
     n1.?.data = .{ .asn = 5 };
@@ -316,7 +342,8 @@ test "construction" {
 }
 
 test "construction and adding multiple items" {
-    var tree = RadixTree{};
+    const allocator = std.heap.page_allocator;
+    var tree = RadixTree.init(allocator);
     const pfx = try Prefix.fromCidr("1.0.0.0/8");
     const pfx2 = try Prefix.fromCidr("2.0.0.0/8");
     const n1 = tree.insertPrefix(pfx);
@@ -331,7 +358,8 @@ test "construction and adding multiple items" {
 }
 
 test "addition or update when adding" {
-    var tree = RadixTree{};
+    const allocator = std.heap.page_allocator;
+    var tree = RadixTree.init(allocator);
     const pfx = try Prefix.fromCidr("1.0.0.0/8");
     const pfx2 = try Prefix.fromCidr("2.0.0.0/8");
 
@@ -340,15 +368,28 @@ test "addition or update when adding" {
     _ = tree.insertPrefix(pfx2);
 }
 
+test "should be searchable" {
+    const allocator = std.heap.page_allocator;
+    var tree = RadixTree.init(allocator);
+    const parent = try Prefix.fromCidr("1.0.0.0/8");
+    tree.insertPrefix(parent).?.data = .{ .asn = 5 };
+
+    const pfx = try Prefix.fromCidr("1.1.1.0/32");
+    std.debug.print("{}\n", .{pfx});
+    const result = tree.searchBest(pfx);
+    try expect(result != null);
+}
+
 test "when parent has more data then data should be merged in" {
-    var tree = RadixTree{};
+    const allocator = std.heap.page_allocator;
+    var tree = RadixTree.init(allocator);
     const parent = try Prefix.fromCidr("1.0.0.0/8");
     const child = try Prefix.fromCidr("1.0.0.0/16");
     tree.insertPrefix(parent).?.data = .{ .asn = 5 };
     tree.insertPrefix(child).?.data = .{ .datacenter = true };
 
     const pfx = try Prefix.fromCidr("1.1.1.0/32");
-    // std.debug.print("{}", .{pfx});
+    std.debug.print("{}\n", .{pfx});
     const result = tree.searchBest(pfx);
     try expect(result != null);
     try expect(result.?.node != null);
