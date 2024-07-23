@@ -15,9 +15,9 @@ pub fn main() !void {
 
     var tree = RadixTree{};
     const parent = try Prefix.fromCidr("1.0.0.0/8");
-    const child = try Prefix.fromCidr("1.0.0.0/16");
-    tree.insertPrefix(parent).?.data = .{ .asn = 5 };
-    tree.insertPrefix(child).?.data = .{ .datacenter = true };
+    const child = try Prefix.fromCidr("1.1.0.0/16");
+    try tree.insertValue(parent, .{ .asn = 5 });
+    try tree.insertValue(child, .{ .datacenter = true });
 
     const pfx = try Prefix.fromCidr("1.1.1.0/32");
     std.debug.print("{}\n", .{pfx});
