@@ -122,25 +122,48 @@ fn ip(s: []const u8) Address {
 
 test {
     var buffer: [32]u8 = undefined;
-    var outcomes: [256][]const u8 = undefined;
-    outcomes[0] = "1.1.1.0:0/32";
-    outcomes[1] = "1.1.1.0:0/31";
-    outcomes[2] = "1.1.1.0:0/31";
-    outcomes[3] = "1.1.1.0:0/30";
-    outcomes[4] = "1.1.1.0:0/30";
+    const ranges: [27][2][]const u8 = [_][2][]const u8{
+        [_][]const u8{ "50.7.0.0-50.7.0.255", "50.7.0.0:0/24" },
+        [_][]const u8{ "50.7.0.0-50.7.255.255", "50.7.0.0:0/16" },
+        [_][]const u8{ "50.2.0.0-50.3.255.255", "50.2.0.0:0/15" },
+        [_][]const u8{ "50.16.0.0-50.19.255.255", "50.16.0.0:0/14" },
+        [_][]const u8{ "50.21.176.0-50.21.191.255", "50.21.176.0:0/20" },
+        [_][]const u8{ "50.22.0.0-50.23.255.255", "50.22.0.0:0/15" },
+        [_][]const u8{ "50.28.0.0-50.28.127.255", "50.28.0.0:0/17" },
+        [_][]const u8{ "50.31.0.0-50.31.127.255", "50.31.0.0:0/17" },
+        [_][]const u8{ "50.31.128.0-50.31.255.255", "50.31.128.0:0/17" },
+        [_][]const u8{ "50.56.0.0-50.57.255.255", "50.56.0.0:0/15" },
+        [_][]const u8{ "50.58.197.0-50.58.197.255", "50.58.197.0:0/24" },
+        [_][]const u8{ "50.60.0.0-50.61.255.255", "50.60.0.0:0/15" },
+        [_][]const u8{ "50.62.0.0-50.63.255.255", "50.62.0.0:0/15" },
+        [_][]const u8{ "50.85.0.0-50.85.255.255", "50.85.0.0:0/16" },
+        [_][]const u8{ "50.87.0.0-50.87.255.255", "50.87.0.0:0/16" },
+        [_][]const u8{ "50.97.0.0-50.97.255.255", "50.97.0.0:0/16" },
+        [_][]const u8{ "50.112.0.0-50.112.255.255", "50.112.0.0:0/16" },
+        [_][]const u8{ "50.115.0.0-50.115.15.255", "50.115.0.0:0/20" },
+        [_][]const u8{ "50.115.32.0-50.115.47.255", "50.115.32.0:0/20" },
+        [_][]const u8{ "50.115.112.0-50.115.127.255", "50.115.112.0:0/20" },
+        [_][]const u8{ "50.115.128.0-50.115.143.255", "50.115.128.0:0/20" },
+        [_][]const u8{ "50.115.160.0-50.115.175.255", "50.115.160.0:0/20" },
+        [_][]const u8{ "50.115.224.0-50.115.239.255", "50.115.224.0:0/20" },
+        [_][]const u8{ "50.116.0.0-50.116.63.255", "50.116.0.0:0/18" },
+        [_][]const u8{ "50.116.64.0-50.116.127.255", "50.116.64.0:0/18" },
+        [_][]const u8{ "50.117.0.0-50.117.127.255", "50.117.0.0:0/17" },
+        [_][]const u8{ "50.118.128.0-50.118.255.255", "50.118.128.0:0/17" },
+    };
 
-    for (0..5) |i| {
-        const s = try bufprint(&buffer, "1.1.1.{d}", .{i});
-        var copy_of_s = try std.testing.allocator.alloc(u8, s.len);
-        @memcpy(copy_of_s[0..s.len], s);
-        const result = try getNetworkAndCidrFromIps(ip("1.1.1.0"), ip(s));
+    for (ranges) |range| {
+        var split = std.mem.split(u8, range[0], "-");
+        const start_ip_str = split.next() orelse unreachable;
+        const end_ip_str = split.next() orelse unreachable;
 
+        const startIp = ip(start_ip_str);
+        const endIp = ip(end_ip_str);
+        const result = try getNetworkAndCidrFromIps(startIp, endIp);
         const actualResult = try bufprint(&buffer, "{}/{d}", .{ result.network, result.cidr });
-        // TODO: implement expected outcomes..
-        expectEqualStrings(outcomes[i], actualResult) catch {
-            std.debug.print("While processing: {s} - {s}\n", .{ "1.1.1.0", copy_of_s });
-        };
 
-        std.testing.allocator.free(copy_of_s);
+        expectEqualStrings(range[1], actualResult) catch {
+            std.debug.print("While processing: {s} - {s}\n", .{ start_ip_str, end_ip_str });
+        };
     }
 }
