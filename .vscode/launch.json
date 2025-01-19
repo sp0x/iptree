@@ -4,11 +4,27 @@
         {
             "name": "Debug",
             "type": "lldb",
-            "preLaunchTask": "build",
             "request": "launch",
             "program": "${workspaceFolder}/zig-out/bin/iptree",
             // "args": ["hello-world.zig"],
             "cwd": "${workspaceRoot}",
+            "preLaunchTask": "${defaultBuildTask}"
+        },
+        {
+            "name": "DebugCpp",
+            "type": "cppdbg",
+            "request": "launch",
+            "presentation": {
+                "hidden": false,
+                "group": "",
+                "order": 1
+            },
+            "program": "${workspaceFolder}/zig-out/bin/iptree",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "preLaunchTask": "${defaultBuildTask}"
         },
         {
             "name": "(gdb) Launch",

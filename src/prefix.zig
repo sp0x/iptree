@@ -60,6 +60,18 @@ pub const Prefix = struct {
         return std.mem.asBytes(&self.address.in.sa.addr);
     }
 
+    pub fn format(
+        self: *const Prefix,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+        _ = options;
+
+        try out_stream.print("{}/{d}", .{ self.address, self.networkBits });
+    }
+
     pub fn isSupersetOf(self: *const Prefix, other: Prefix) bool {
         if (other.family != self.family)
             return false;

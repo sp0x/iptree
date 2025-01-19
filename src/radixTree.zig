@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = std.mem;
 const math = std.math;
 const expect = std.testing.expect;
 const Prefix = @import("prefix.zig").Prefix;
@@ -8,13 +9,14 @@ const NodeData = @import("node.zig").NodeData;
 const maxBits: u8 = 128;
 
 pub const SearchResult = struct { node: ?*Node, data: ?NodeData };
+const WalkOp = *const fn (node: *Node) void;
 
 pub const RadixTree = struct {
-    allocator: *const std.mem.Allocator = &std.heap.page_allocator,
+    allocator: *const mem.Allocator = &std.heap.page_allocator,
     head: ?*Node = null,
     numberOfNodes: u32 = 0,
 
-    pub fn init(allocator: *const std.mem.Allocator) RadixTree {
+    pub fn init(allocator: *const mem.Allocator) RadixTree {
         return .{ .allocator = allocator };
     }
 
@@ -34,10 +36,6 @@ pub const RadixTree = struct {
         };
         self.numberOfNodes += 1;
         return self.head.?;
-    }
-
-    fn createNode(self: *RadixTree) !*Node {
-        return try self.allocator.create(Node);
     }
 
     pub fn insertValue(self: *RadixTree, prefix: Prefix, data: NodeData) !void {
@@ -104,7 +102,7 @@ pub const RadixTree = struct {
             return currentNode;
         }
 
-        var resultingNode: *Node = null;
+        var resultingNode: *Node = undefined;
         var newNode = Node{
             .networkBits = prefix.networkBits,
             .prefix = prefix, // try prefix.clone(),
@@ -119,10 +117,10 @@ pub const RadixTree = struct {
             newNode.parent = currentNode;
             const tmpMask: u8 = currentNode.networkBits & 0x07;
             if (currentNode.networkBits < maxBits and testBits(addressBytes[currentNode.networkBits >> 3], math.shr(u8, 0x80, tmpMask))) {
-                currentNode.right = try self.createNode();
+                currentNode.right = try self.allocator.create(Node);
                 currentNode.right.?.* = newNode;
             } else {
-                currentNode.left = try self.createNode();
+                currentNode.left = try self.allocator.create(Node);
                 currentNode.left.?.* = newNode;
             }
             return currentNode.left.?;
@@ -140,13 +138,13 @@ pub const RadixTree = struct {
             if (currentNode.parent == null) {
                 self.head.?.* = newNode;
             } else if (currentNode.parent.?.right == currentNode) {
-                currentNode.parent.right = try self.createNode();
-                currentNode.parent.right.* = newNode;
-                return currentNode.parent.right;
+                currentNode.parent.?.right = try self.allocator.create(Node);
+                currentNode.parent.?.right.?.* = newNode;
+                return currentNode.parent.?.right.?;
             } else {
-                currentNode.parent.left = try self.createNode();
-                currentNode.parent.left.* = newNode;
-                return currentNode.parent.left;
+                currentNode.parent.?.left = try self.allocator.create(Node);
+                currentNode.parent.?.left.?.* = newNode;
+                return currentNode.parent.?.left.?;
             }
         } else {
             var glueNode = Node{
@@ -161,15 +159,15 @@ pub const RadixTree = struct {
 
             const tmpMask: u8 = differBit & 0x07;
             if (differBit < maxBits and testBits(addressBytes[differBit >> 3], math.shr(u8, 0x80, tmpMask))) {
-                glueNode.right = self.createNode();
-                glueNode.right.* = newNode;
+                glueNode.right = try self.allocator.create(Node);
+                glueNode.right.?.* = newNode;
                 glueNode.left = currentNode;
-                resultingNode = glueNode.right;
+                resultingNode = glueNode.right.?;
             } else {
-                glueNode.left = self.createNode();
+                glueNode.left = try self.allocator.create(Node);
                 glueNode.right = currentNode;
-                glueNode.left.* = newNode;
-                resultingNode = glueNode.left;
+                glueNode.left.?.* = newNode;
+                resultingNode = glueNode.left.?;
             }
 
             newNode.parent = &glueNode;
@@ -215,6 +213,16 @@ pub const RadixTree = struct {
         }
 
         return null;
+    }
+
+    pub fn walk(self: *RadixTree, node: *Node, f: WalkOp) void {
+        if (node.left) |left| {
+            self.walk(left, f);
+        }
+        if (node.right) |right| {
+            self.walk(right, f);
+        }
+        f(node);
     }
 
     pub fn searchBest(self: *RadixTree, prefix: Prefix) ?SearchResult {
@@ -330,6 +338,16 @@ pub fn compareAddressesWithMask(address: []const u8, dest: []const u8, mask: u32
     }
 
     return false;
+}
+
+inline fn getDigits(num: u32) u32 {
+    var digits: u32 = 0;
+    var n = num;
+    while (n != 0) {
+        n /= 10;
+        digits += 1;
+    }
+    return digits;
 }
 
 comptime {

@@ -2,14 +2,30 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build",
+            "label": "Zig: build",
+            "args": [
+                "build",
+                "-Doptimize=Debug",
+                "--release=safe"
+            ],
+            "detail": "build -Doptimize=Debug --release=safe",
             "type": "shell",
-            "command": "zig build",
-            "problemMatcher": [],
+            "command": "zig",
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            },
+            "presentation": {
+                "group": "build",
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            },
+            "problemMatcher": []
         }
     ]
 }
