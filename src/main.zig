@@ -24,7 +24,7 @@ pub fn main() !void {
 
     const pfx = try Prefix.fromCidr("1.1.1.0/32");
     std.debug.print("{}\n", .{pfx});
-    const result = tree.searchBest(pfx) orelse {
+    const result = tree.SearchBest(pfx) orelse {
         _ = try bw.write("No search result found.\n");
         return;
     };

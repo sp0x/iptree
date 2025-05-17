@@ -1,14 +1,17 @@
 const std = @import("std");
 const mem = std.mem;
 const math = std.math;
+const testing = std.testing;
 const expect = std.testing.expect;
 const Prefix = @import("prefix.zig").Prefix;
-const Node = @import("node.zig").Node;
-const NodeData = @import("node.zig").NodeData;
+const NodeMod = @import("node.zig");
+const Node = NodeMod.Node;
+const NodeData = NodeMod.NodeData;
 
-const maxBits: u8 = 128;
+// Currently only IPv4 is supported, later on this should be extended to IPv6
+const maxBits: u8 = 32;
 
-pub const SearchResult = struct { node: ?*Node, data: ?NodeData };
+pub const SearchResult = struct { node: ?*const Node, data: ?NodeData };
 const WalkOp = *const fn (node: *Node) void;
 
 pub const RadixTree = struct {
@@ -225,50 +228,51 @@ pub const RadixTree = struct {
         f(node);
     }
 
-    pub fn searchBest(self: *RadixTree, prefix: Prefix) ?SearchResult {
+    /// Search for the best match for a given IP/CIDR in the radix tree.
+    pub fn SearchBest(self: *RadixTree, prefixToFind: Prefix) ?SearchResult {
         if (self.head == null) {
             return null;
         }
 
-        var stack = std.ArrayList(*Node).init(std.heap.page_allocator);
+        var stack = std.ArrayList(*const Node).init(std.heap.page_allocator);
         defer stack.deinit();
-        var node: ?*Node = self.head.?;
+        var nodeLp: ?*Node = self.head.?;
 
-        const addressBytes = prefix.asBytes();
-        const bitlen = prefix.networkBits;
-        while (node.?.networkBits < bitlen) {
-            const snode = node.?.*;
-            if (!snode.prefix.isEmpty()) {
-                stack.append(node orelse unreachable) catch return null;
+        const prefixToFindBytes = prefixToFind.asBytes();
+        const needleCidr = prefixToFind.networkBits;
+        // Starting from the head node, traverse the tree
+        while (nodeLp.?.networkBits < needleCidr) {
+            const crNode = nodeLp.?.*;
+            if (!crNode.prefix.isEmpty()) {
+                stack.append(nodeLp orelse unreachable) catch return null;
             }
 
-            if (testBits(addressBytes[snode.networkBits >> 3], math.shr(u8, 0x80, snode.networkBits & 0x07))) {
+            if (testBits(prefixToFindBytes[crNode.networkBits >> 3], math.shr(u8, 0x80, crNode.networkBits & 0x07))) {
                 // Possible issue here!
-                node = snode.right;
+                nodeLp = crNode.right;
             } else {
                 // Or here
-                node = snode.left;
+                nodeLp = crNode.left;
             }
 
-            if (node == null) break;
+            if (nodeLp == null) break;
         }
 
-        if (node != null and !node.?.prefix.isEmpty()) {
-            stack.append(node.?) catch return null;
+        if (nodeLp != null and !nodeLp.?.prefix.isEmpty()) {
+            stack.append(nodeLp.?) catch return null;
         }
 
-        std.debug.print("Tree: {}\n", .{self});
         while (stack.items.len > 0) {
-            const snode = stack.pop();
-            const nodeAddrBytes = snode.prefix.asBytes();
+            const stackNode = stack.pop();
+            const nodeAddrBytes = stackNode.prefix.asBytes();
 
-            const doPrefixesMatch = compareAddressesWithMask(addressBytes, nodeAddrBytes, snode.prefix.networkBits);
+            const doPrefixesMatch = compareAddressesWithMask(prefixToFindBytes, nodeAddrBytes, stackNode.prefix.networkBits);
 
-            if (doPrefixesMatch and snode.prefix.networkBits <= bitlen) {
-                const mergeResult = mergeParentStack(snode, &stack);
+            if (doPrefixesMatch and stackNode.prefix.networkBits <= needleCidr) {
+                const mergeResult = mergeParentStack(stackNode, &stack);
 
                 return .{
-                    .node = snode,
+                    .node = stackNode,
                     .data = mergeResult,
                 };
             }
@@ -288,13 +292,14 @@ pub const RadixTree = struct {
     }
 };
 
-fn mergeParentStack(leafNode: *Node, stack: *std.ArrayList(*Node)) ?NodeData {
-    var mergeResult: ?NodeData = leafNode.data;
+fn mergeParentStack(seedNode: *const Node, stack: *std.ArrayList(*const Node)) ?NodeData {
+    var mergeResult: ?NodeData = seedNode.data;
 
     while (stack.items.len > 0) {
         const parent = stack.pop();
 
         if (mergeResult == null or !mergeResult.?.isComplete()) {
+            // We overwrite the data if the parent is a smaller subnet, not a bigger one
             mergeResult = mergeOrSwap(mergeResult, parent.data, false);
         } else {
             break;
@@ -316,7 +321,7 @@ fn mergeOrSwap(dest: ?NodeData, src: ?NodeData, overwrite: bool) ?NodeData {
     var nonNullDestination = dest orelse return null;
 
     nonNullDestination.merge(&src.?, overwrite);
-    return dest;
+    return nonNullDestination;
 }
 
 fn testBits(byte: u8, mask: u8) bool {
@@ -340,16 +345,6 @@ pub fn compareAddressesWithMask(address: []const u8, dest: []const u8, mask: u32
     return false;
 }
 
-inline fn getDigits(num: u32) u32 {
-    var digits: u32 = 0;
-    var n = num;
-    while (n != 0) {
-        n /= 10;
-        digits += 1;
-    }
-    return digits;
-}
-
 comptime {
     @import("std").testing.refAllDecls(@This());
 }
@@ -368,6 +363,32 @@ test "construction" {
 
     try expect(tree.head != null);
     try expect(tree.numberOfNodes == 1);
+}
+
+test "mergeParentStack" {
+    const allocator = std.testing.allocator;
+    const pfx = try Prefix.fromIpAndMask("1.0.0.0", 32);
+    const node = NodeMod.New(.{
+        .asn = null,
+        .datacenter = null,
+    }, pfx);
+    var stack = std.ArrayList(*const Node).init(allocator);
+
+    try stack.append(&NodeMod.New(.{
+        .asn = 52,
+        .datacenter = null,
+    }, pfx));
+    try stack.append(&NodeMod.New(.{
+        .asn = null,
+        .datacenter = true,
+    }, pfx));
+    defer stack.deinit();
+
+    const mergedData = mergeParentStack(&node, &stack);
+
+    try expect(mergedData != null);
+    try expect(mergedData.?.datacenter == true);
+    try expect(mergedData.?.asn == 52);
 }
 
 test "construction and adding multiple items" {
@@ -403,9 +424,12 @@ test "should be searchable" {
     node.data = .{ .asn = 5 };
 
     const pfx = try Prefix.fromCidr("1.1.1.0/32");
-    std.debug.print("{}\n", .{pfx});
-    const result = tree.searchBest(pfx);
+    const result = tree.SearchBest(pfx);
     try expect(result != null);
+    try expect(result.?.node != null);
+    const data = result.?.data.?;
+    try expect(data.asn == 5);
+    try expect(data.datacenter == null);
 }
 
 test "when parent has more data then data should be merged in" {
@@ -418,12 +442,11 @@ test "when parent has more data then data should be merged in" {
 
     const pfx = try Prefix.fromCidr("1.1.1.0/32");
 
-    const result = tree.searchBest(pfx);
+    const result = tree.SearchBest(pfx);
 
-    std.debug.print("Result: {}\n", .{result.?.data.?});
     try expect(result != null);
     try expect(result.?.node != null);
     const data = result.?.data.?;
-    try expect(data.asn == 5);
-    try expect(data.datacenter == true);
+    try testing.expectEqual(5, data.asn);
+    try expect(data.datacenter.?);
 }

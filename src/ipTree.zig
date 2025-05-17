@@ -13,7 +13,7 @@ pub const IpTree = struct {
     pub fn insert(self: *IpTree, addr: []const u8, mask: u8, value: ?NodeData) !void {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
         var tree = try self.pickTree(prefix.family);
-        const node = tree.insertPrefix(prefix) orelse return error.CouldNotInsert;
+        const node = try tree.insertPrefix(prefix);
 
         node.*.data = value;
     }
@@ -21,7 +21,7 @@ pub const IpTree = struct {
     pub fn searchBest(self: *IpTree, addr: []const u8, mask: u8) !?SearchResult {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
         const tree = try self.pickTree(prefix.family);
-        return tree.searchBest(prefix);
+        return tree.SearchBest(prefix);
     }
 
     fn pickTree(self: *IpTree, family: u8) !*RadixTree {

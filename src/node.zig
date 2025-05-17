@@ -1,13 +1,7 @@
 const Prefix = @import("prefix.zig").Prefix;
 const std = @import("std");
+const testing = std.testing;
 const expect = std.testing.expect;
-
-inline fn mergeValues(comptime T: type, dest_value: ?T, source_value: ?T, overwrite: bool) ?T {
-    return if (source_value) |value|
-        (if (dest_value == null or overwrite) value else dest_value)
-    else
-        dest_value;
-}
 
 pub const NodeData = struct {
     asn: ?u32 = null,
@@ -18,8 +12,17 @@ pub const NodeData = struct {
     }
 
     pub fn merge(self: *NodeData, other: *const NodeData, overwrite: bool) void {
-        self.asn = mergeValues(u32, self.asn, other.asn, overwrite);
-        self.datacenter = mergeValues(bool, self.datacenter, other.datacenter, overwrite);
+        var asnVal = self.asn orelse other.asn;
+        var datacenterVal = self.datacenter orelse other.datacenter;
+        if (overwrite and other.asn != null) {
+            asnVal = other.asn;
+        }
+        if (overwrite and other.datacenter != null) {
+            datacenterVal = other.datacenter;
+        }
+
+        self.asn = asnVal;
+        self.datacenter = datacenterVal;
     }
 };
 
@@ -31,6 +34,16 @@ pub const Node = struct {
     data: ?NodeData,
     networkBits: u8 = 0,
 };
+
+pub fn New(data: NodeData, prefix: Prefix) Node {
+    return Node{
+        .prefix = prefix,
+        .parent = null,
+        .left = null,
+        .right = null,
+        .data = data,
+    };
+}
 
 test "Node" {
     const pfx = try Prefix.fromIpAndMask("1.1.1.1", 0);
@@ -49,7 +62,7 @@ test "Node" {
 
 test "Node merge" {
     var nodeData1: NodeData = .{
-        .asn = 0,
+        .asn = 55,
         .datacenter = null,
     };
     const nodeData2: NodeData = .{
@@ -59,6 +72,54 @@ test "Node merge" {
 
     nodeData1.merge(&nodeData2, true);
 
-    try expect(nodeData1.asn == 0);
+    try expect(nodeData1.asn == 55);
     try expect(nodeData1.datacenter == true);
+}
+
+test "Node merge overwrite" {
+    var nodeData1: NodeData = .{
+        .asn = 55,
+        .datacenter = null,
+    };
+    const nodeData2: NodeData = .{
+        .asn = 56,
+        .datacenter = true,
+    };
+
+    nodeData1.merge(&nodeData2, true);
+
+    try testing.expectEqual(56, nodeData1.asn);
+    try expect(nodeData1.datacenter.?);
+}
+
+test "Node merge without overwrite" {
+    var nodeData1: NodeData = .{
+        .asn = 55,
+        .datacenter = null,
+    };
+    const nodeData2: NodeData = .{
+        .asn = null,
+        .datacenter = true,
+    };
+
+    nodeData1.merge(&nodeData2, false);
+
+    try expect(nodeData1.asn == 55);
+    try expect(nodeData1.datacenter == true);
+}
+
+test "Node merge without overwrite and value change" {
+    var nodeData1: NodeData = .{
+        .asn = 55,
+        .datacenter = null,
+    };
+    const nodeData2: NodeData = .{
+        .asn = 56,
+        .datacenter = true,
+    };
+
+    nodeData1.merge(&nodeData2, false);
+
+    try testing.expectEqual(55, nodeData1.asn);
+    try expect(nodeData1.datacenter.?);
 }
