@@ -6,7 +6,6 @@ const Prefix = @import("prefix.zig").Prefix;
 const RadixTree = @import("radixTree.zig").RadixTree;
 const IpTree = @import("ipTree.zig").IpTree;
 const NodeData = @import("node.zig").NodeData;
-const Utils = @import("utils.zig");
 
 pub fn main() !void {
     // stdout is for the actual output of your application, for example if you
@@ -15,20 +14,6 @@ pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
-
-    const allocator = std.heap.page_allocator;
-    // 51.4.0.0-51.5.255.255 -> 51.4.0.0:0/15
-    const start_ip = Address.parseIp("51.4.0.0", 0) catch unreachable;
-    const end_ip = Address.parseIp("51.5.255.255", 0) catch unreachable;
-    const ranges: [2][]const u8 = [2][]const u8{ &[_]u8{ 0x33, 0x4, 0x0, 0x0 }, &[_]u8{ 0x33, 0x5, 0xff, 0xff } };
-    const bits = Utils.get_min_network_bits(ranges[0], ranges[1]);
-
-    try stdout.print("Min network bits: {d}", .{bits});
-
-    const results = try Utils.GetNetworkAndCidrFromIps(allocator, start_ip, end_ip);
-    for (results.items) |result| {
-        std.debug.print("Network: {}\n", .{result});
-    }
 
     var tree = RadixTree{};
     const parent = try Prefix.fromCidr("1.0.0.0/8");

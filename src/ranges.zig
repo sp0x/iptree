@@ -1,29 +1,67 @@
 const std = @import("std");
+const posix = std.posix;
 const net = @import("std").net;
 const mem = std.mem;
 const math = std.math;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const Ip4Address = net.Ip4Address;
+const Address = net.Address;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-const NetworkAndCidr = struct {
+const Errors = error{
+    InvalidFamily,
+    InvalidAddress,
+    InvalidCIDR,
+};
+
+pub const NetworkAndCidr = struct {
     network: net.Ip4Address,
     cidr: u8,
+
+    pub fn format(
+        self: *const NetworkAndCidr,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+        _ = options;
+
+        try out_stream.print("{}/{d}", .{ self.network, self.cidr });
+    }
 };
+
+pub fn GetFamily(ipAddress: []const u8) u8 {
+    if (mem.containsAtLeast(u8, ipAddress, 1, ":")) {
+        return posix.AF.INET6;
+    } else {
+        return posix.AF.INET;
+    }
+}
+
+fn asNumber(addr: Address) !u32 {
+    if (addr.family == posix.AF.INET) {
+        return mem.readInt(u32, mem.asBytes(&addr.addr), .big);
+    } else if (addr.family == posix.AF.INET6) {
+        return mem.readInt(u32, mem.asBytes(&addr.addr), .little);
+    } else {
+        return Errors.InvalidFamily;
+    }
+}
 
 pub fn ipv4AsNumber(addr: Ip4Address) u32 {
     return mem.readInt(u32, mem.asBytes(&addr.sa.addr), .big);
 }
 
-pub fn ip4(str: []const u8) !Ip4Address {
+fn ip4(str: []const u8) !Ip4Address {
     const ip = try Ip4Address.parse(str, 0);
     return ip;
 }
 
-pub fn ip4str(alloc: Allocator, ip: Ip4Address) ![]const u8 {
+fn ip4str(alloc: Allocator, ip: Ip4Address) ![]const u8 {
     // Convert the IP address to a string representatio
     const str = try std.fmt.allocPrint(alloc, "{}", .{ip});
     // Remove the trailing :0
@@ -99,21 +137,21 @@ pub fn GetCIDRsInRange(alloc: Allocator, start_ip: Ip4Address, end_ip: Ip4Addres
     return results;
 }
 
-const TestCase = struct {
+const testCase = struct {
     start: Ip4Address,
     end: Ip4Address,
     exp_net: []const u8,
     exp_cidr: u8,
 };
 
-const ExpectedResult = struct {
+const expectedResult = struct {
     network: []const u8,
     cidr: u8,
 };
 
-test "pass 0" {
+test "Single CIDR block IPv4 ranges" {
     const alloc = std.heap.page_allocator;
-    const test_cases = [_]TestCase{
+    const test_cases = [_]testCase{
         .{ .start = try ip4("10.10.10.0"), .end = try ip4("10.10.10.255"), .exp_net = "10.10.10.0", .exp_cidr = 24 },
         .{ .start = try ip4("10.10.10.128"), .end = try ip4("10.10.10.255"), .exp_net = "10.10.10.128", .exp_cidr = 25 },
         .{ .start = try ip4("50.7.0.0"), .end = try ip4("50.7.0.255"), .exp_net = "50.7.0.0", .exp_cidr = 24 },
@@ -158,12 +196,12 @@ test "pass 0" {
     }
 }
 
-test "multiple CIDR blocks" {
+test "Multiple CIDR block IPv4 ranges" {
     // Arrange
     const alloc = std.heap.page_allocator;
     const start = try ip4("51.10.0.0");
     const end = try ip4("51.24.255.255");
-    const expected = [_]ExpectedResult{
+    const expected = [_]expectedResult{
         .{ .network = "51.10.0.0", .cidr = 15 },
         .{ .network = "51.12.0.0", .cidr = 14 },
         .{ .network = "51.16.0.0", .cidr = 13 },
@@ -173,9 +211,9 @@ test "multiple CIDR blocks" {
     //Act
     const result = try GetCIDRsInRange(alloc, start, end);
     defer result.deinit();
-    for (result.items) |item| {
-        std.debug.print("Network: {}, CIDR: {}\n", .{ item.network, item.cidr });
-    }
+    // for (result.items) |item| {
+    //     std.debug.print("Network: {}, CIDR: {}\n", .{ item.network, item.cidr });
+    // }
 
     // Assert
     try expectEqual(4, result.items.len);

@@ -3,8 +3,9 @@ const expect = std.testing.expect;
 const Address = std.net.Address;
 const posix = std.posix;
 const math = std.math;
-const utils = @import("utils.zig");
+const ranges = @import("ranges.zig");
 
+/// Represents a network address with it's CIDR mask
 pub const Prefix = struct {
     family: u8 = posix.AF.INET,
     networkBits: u8 = 0,
@@ -35,7 +36,7 @@ pub const Prefix = struct {
 
     // Create a new prefix using an address, byte array for the IP address and a network mask
     pub fn fromIpAndMask(addr: []const u8, mask: u8) !Prefix {
-        const family = utils.resolveFamily(addr);
+        const family = ranges.GetFamily(addr);
         const maxMaskValue: u8 = if (family == posix.AF.INET) @as(u8, 32) else @as(u8, 128);
         var targetMaskValue = mask;
         if (mask > maxMaskValue) {
@@ -145,7 +146,7 @@ fn sanitizeMask(addr: Address, masklen: u8, maskbits: u8) Address {
     } };
 }
 
-test "prefix" {
+test "prefix from IP and mask" {
     const prefix = try Prefix.fromIpAndMask("192.168.0.0", 24);
     try expect(prefix.family == posix.AF.INET);
     try expect(prefix.networkBits == 24);
