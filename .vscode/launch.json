@@ -27,6 +27,11 @@
             "preLaunchTask": "${defaultBuildTask}"
         },
         {
+            "name": "Test",
+            "type": "lldb",
+            "request": "launch"
+        },
+        {
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",

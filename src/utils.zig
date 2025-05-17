@@ -56,6 +56,10 @@ pub fn asNumber(address: Address) u32 {
     };
 }
 
+pub fn ipv4AsNumber(addr: net.Ip4Address) u32 {
+    return mem.readInt(u32, mem.asBytes(addr.sa.addr), .big);
+}
+
 /// Goes from the least significant bit to the most significant bit and compares them if they are the same.
 fn compare_bits(byte1: u8, byte2: u8, index: anytype) bool {
     const bit1 = math.shr(u8, byte1, index) & 1;
@@ -63,8 +67,17 @@ fn compare_bits(byte1: u8, byte2: u8, index: anytype) bool {
     return bit1 == bit2;
 }
 
+const NetworkBitsType = enum {
+    single,
+    multiple,
+};
+const NetworkBitsResult = union(NetworkBitsType) {
+    single: u8,
+    multiple: u8,
+};
+
 /// Go byte by byte untill a diff is found, then get the trailing 0s for hosts
-pub fn get_min_network_bits(start_ip: []const u8, end_ip: []const u8) u8 {
+pub fn get_covering_network_bits(start_ip: []const u8, end_ip: []const u8) NetworkBitsResult {
     // Cases:
     // 1:
     // 00110011.00000100.00000000.00000000
@@ -97,21 +110,75 @@ pub fn get_min_network_bits(start_ip: []const u8, end_ip: []const u8) u8 {
             j -= 1;
         }
 
-        std.debug.print("current_segment_common_bits between {d} and {d} = {d}\n", .{ start, end, current_segment_common_bits });
+        // std.debug.print("current_segment_common_bits between {d} and {d} = {d}\n", .{ start, end, current_segment_common_bits });
 
         const start_ctz = @ctz(start);
-        std.debug.print("start ctz: {d}\n", .{start_ctz});
         // If the treailing zeros + the common bits are 8, then we can use a single range
         if (start_ctz + current_segment_common_bits >= 8) {
+            // std.debug.print("start ctz[{d}] + current_segment_common_bits[{d}] >= 8\n", .{ start_ctz, current_segment_common_bits });
             common_bits += current_segment_common_bits;
-            break;
+            return NetworkBitsResult{ .single = common_bits };
         }
 
         // Else the start IP has bit(s) to the right, so we must break it up in smaller ranges
         common_bits += 8 - @ctz(start_ip[i]);
-        break;
+        // std.debug.print("common_bits = {d}.. using multiple ranges\n", .{common_bits});
+        return NetworkBitsResult{ .multiple = common_bits };
     }
-    return common_bits;
+
+    return NetworkBitsResult{ .single = common_bits };
+}
+
+fn calculate_prefix_length(start_ip: u32, end_ip: u32) u8 {
+    var num_trailing_zeros: u8 = 0;
+    num_trailing_zeros = @ctz(start_ip);
+
+    // Find the number of trailing zeros in the start IP address
+    //    while ((start_ip >> num_trailing_zeros) & 1) == 0 {
+    //      num_trailing_zeros += 1;
+    //}
+
+    // Calculate the maximum possible prefix length
+    var max_prefix_len: u8 = 32 - num_trailing_zeros;
+
+    // Adjust prefix length to ensure it doesn't exceed the end IP address
+    const mask = try std.math.powi(u32, 2, num_trailing_zeros);
+    var current_ip: u32 = start_ip | (mask - 1);
+    while (current_ip > end_ip) {
+        num_trailing_zeros -= 1;
+        max_prefix_len += 1;
+        current_ip = start_ip | (std.math.powi(2, num_trailing_zeros) - 1);
+    }
+
+    // Calculate the actual prefix length based on the start and current IP addresses
+    var prefix_len: u8 = 0;
+    while ((current_ip & (std.math.powi(2, prefix_len))) != (start_ip & (std.math.powi(2, prefix_len)))) {
+        prefix_len += 1;
+    }
+    prefix_len = 32 - prefix_len;
+
+    return prefix_len;
+}
+
+fn get_ip_subnets_in_range(allocator: Allocator, start_ip: net.Ip4Address, end_ip: net.Ip4Address) !std.ArrayList(NetworkAndCidr) {
+    var results = std.ArrayList(NetworkAndCidr).init(allocator);
+    var start_n = ipv4AsNumber(start_ip);
+    const end_n = ipv4AsNumber(end_ip);
+
+    while (start_n <= end_n) {
+        const prefix_len = calculate_prefix_length(start_n, end_n);
+        const network = net.Ip4Address{
+            .sa = .{
+                .port = 0,
+                .addr = @byteSwap(start_n),
+            },
+        };
+        try results.append(.{
+            .network = Address{ .in = network },
+            .cidr = prefix_len,
+        });
+        start_n += 1;
+    }
 }
 
 fn getNetworkAndCidrFromIpv4(allocator: Allocator, start_ip: net.Ip4Address, end_ip: net.Ip4Address) !std.ArrayList(NetworkAndCidr) {
@@ -119,7 +186,7 @@ fn getNetworkAndCidrFromIpv4(allocator: Allocator, start_ip: net.Ip4Address, end
     const start_ip_bytes = mem.asBytes(&start_ip.sa.addr);
     const end_ip_bytes = mem.asBytes(&end_ip.sa.addr);
 
-    const min_network_bits = get_min_network_bits(start_ip_bytes, end_ip_bytes);
+    const min_network_bits = get_covering_network_bits(start_ip_bytes, end_ip_bytes);
     const host_bits: u8 = 32 - min_network_bits;
     const hosts_mask = math.shl(u32, 1, host_bits) - 1;
     var temp_ip = net.Ip4Address{
@@ -214,37 +281,79 @@ fn ip(s: []const u8) Address {
     return Address.parseIp(s, 0) catch unreachable;
 }
 
-test "get_min_network_bits" {
-    fn print_ip(ip: []const u8) void {
-        std.debug.print("{d}.{d}.{d}.{d}", .{ ip[0], ip[1], ip[2], ip[3] });
-    }
+fn print_ip(ipn: []const u8) void {
+    std.debug.print("{d}.{d}.{d}.{d}", .{ ipn[0], ipn[1], ipn[2], ipn[3] });
+}
 
+test "get_ip_subnets_in_range" {
+    const allocator = std.testing.allocator;
+    const start_ip = try net.Ip4Address.parse("51.0.0.0", 0);
+    const end_ip = try net.Ip4Address.parse("51.0.0.255", 0);
+    const results = try get_ip_subnets_in_range(allocator, start_ip, end_ip);
+
+    for (results.items) |result| {
+        std.debug.print("{}\n", .{result});
+    }
+}
+
+test "get_min_network_bits" {
     // Arrange
     const test_buffer = [_]u8{
+        // 51.4.0.0 - 51.5.0.0 = 15
         @as(u8, 51), 0x4, 0x0,  0x0,
         @as(u8, 51), 0x5, 0xff, 0xff,
-        @as(u8, 15),
-    };
+        0x0, @as(u8, 15), // single, 15
+        //
+        @as(u8, 51), 0xa, 0x0, 0x0, // 51.10.0.0
+        @as(u8, 51), 0xd, 0xff, 0xff, // 51.13.255.255
+        0x1, @as(u8, 15), // multiple, 15
+        //
+        @as(u8, 51), 0x10, 0x0, 0x0, // 51.16.0.0
+        @as(u8, 51), 0x10, 0xff, 0xff, // 51.16.255.255
+        0x0, @as(u8, 16), // single, 16
+        //
+        @as(u8, 51), 0x10, 0x0, 0x0, // 51.16.0.0
+        @as(u8, 51), 0x10, 0x0, 0xff, // 51.16.0.255
+        0x0, @as(u8, 24), // single, 24
+        //
+        @as(u8, 51), 0x0, 0x0, 0x0, // 51.0.0.0
+        @as(u8, 51), 0xff, 0xff, 0xff, // 51.255.255.255
+        0x0, @as(u8, 8), // single, 8
+        //
+        @as(u8, 51), 0x0, 0x0, 0x0, // 51.0.0.0
+        @as(u8, 51), 0x0, 0x0, 0x10, // 51.0.0.16 ()
+        0x0, @as(u8, 27), // single, 27
+        //
+        @as(u8, 51), 0x0, 0x0, 0x0, // 51.0.0.0
+        @as(u8, 51), 0x0, 0x0, 0x1, // 51.0.0.1
+        0x0, @as(u8, 31), // single, 31
+        //
+    }; // Each test case is 4 + 4 + 1 bytes long
+    const test_size = 10;
 
     // Act
     var i: usize = 0;
-    while (true) {
+    while (i < test_buffer.len) {
         const start_ip = test_buffer[i .. i + 4];
-        const end_ip = test_buffer[(i + 1) * 4 .. (i + 1) * 4 + 4];
-        const expected = test_buffer[(i + 1) * 4 + 1 .. (i + 1) * 4 + 1 + 1][0];
-        std.debug.print("start_ip: ");        print_ip(start_ip);
-        std.debug.print(" end_ip: ");        print_ip(end_ip);
-        std.debug.print
-        std.debug.print("start_ip: {d}.{d}.{d}.{d}\n", .{ start_ip[0], start_ip[1], start_ip[2], start_ip[3] });    
-        std.debug.print("\n");
+        const end_ip = test_buffer[i + 4 .. i + 4 * 2];
+        const expected_type = test_buffer[i + 4 * 2];
+        const expected_value = test_buffer[i + 4 * 2 + 1];
+        const expected = switch (expected_type) {
+            0 => NetworkBitsResult{ .single = expected_value },
+            1 => NetworkBitsResult{ .multiple = expected_value },
+            else => unreachable,
+        };
 
-        std.fmt.format("{s}", .{std.fmt.fmtSliceHexLower(&[_]u8{ 1, 2, 3, 15, 13, 12 })});
-        std.debug.print("start_ip: {d}.{d}.{d}.{d}\n", .{ start_ip[0], start_ip[1], start_ip[2], start_ip[3] });
+        print_ip(start_ip);
+        std.debug.print(" - ", .{});
+        print_ip(end_ip);
+        std.debug.print(" = {}\n", .{expected});
+
         // Act
-        const result = get_min_network_bits(start_ip, end_ip);
+        const result = get_covering_network_bits(start_ip, end_ip);
         // Assert
         try expectEqual(expected, result);
-        i += 1;
+        i += test_size;
     }
 }
 
