@@ -15,28 +15,6 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    var tree = RadixTree{};
-    const parent = try Prefix.fromCidr("1.0.0.0/8");
-    const child = try Prefix.fromCidr("1.1.0.0/16");
-
-    try tree.insertValue(parent, .{ .asn = 5 });
-    try tree.insertValue(child, .{ .datacenter = true });
-
-    const pfx = try Prefix.fromCidr("1.1.1.0/32");
-    std.debug.print("{}\n", .{pfx});
-    const result = tree.SearchBest(pfx) orelse {
-        _ = try bw.write("No search result found.\n");
-        return;
-    };
-
-    try stdout.print("\nSearch result {}.\n", .{result.data.?});
-
+    _ = stdout;
     try bw.flush(); // don't forget to flush!
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
 }
