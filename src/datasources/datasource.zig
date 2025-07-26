@@ -20,27 +20,31 @@ pub const Datasource = struct {
         return self.loadFn(self.ptr, tree, allocator);
     }
 
+    pub fn fetch(self: *Datasource) anyerror!void {
+        return self.fetchFn(self.ptr);
+    }
+
     pub fn init(lp: anytype) Datasource {
         const T = @TypeOf(lp);
         const ptr_info = @typeInfo(T);
-        if (ptr_info != .Pointer) @compileError("ptr must be a pointer");
-        if (ptr_info.Pointer.size != .One) @compileError("ptr must be a single item pointer");
+        if (ptr_info != .pointer) @compileError("ptr must be a pointer");
+        if (ptr_info.pointer.size != .one) @compileError("ptr must be a single item pointer");
 
         const gen = struct {
             pub fn load(p: *anyopaque, tree: *IpTree, allocator: Allocator) anyerror!void {
                 const self: T = @ptrCast(@alignCast(p));
                 // child is the actual type of the pointer
-                return ptr_info.Pointer.child.load(self, tree, allocator);
+                return ptr_info.pointer.child.load(self, tree, allocator);
             }
             pub fn fetch(p: *anyopaque) !void {
                 const self: T = @ptrCast(@alignCast(p));
                 // child is the actual type of the pointer
-                try ptr_info.Pointer.child.fetch(self);
+                try ptr_info.pointer.child.fetch(self);
             }
             pub fn free(p: *anyopaque) void {
                 const self: T = @ptrCast(@alignCast(p));
                 // child is the actual type of the pointer
-                ptr_info.Pointer.child.free(self);
+                ptr_info.pointer.child.free(self);
             }
         };
 

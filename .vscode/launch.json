@@ -5,9 +5,8 @@
             "name": "Debug",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceFolder}/zig-out/bin/iptree",
-            // "args": ["hello-world.zig"],
-            "cwd": "${workspaceRoot}",
+            "program": "zig-out/bin/iptree",
+            "cwd": "./",
             "preLaunchTask": "${defaultBuildTask}"
         },
         {
@@ -19,7 +18,7 @@
                 "group": "",
                 "order": 1
             },
-            "program": "${workspaceFolder}/zig-out/bin/iptree",
+            "program": "zig-out/bin/iptree",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -35,8 +34,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/zig-out/bin/iptree",
-            // "program": "${workspaceFolder}/.zig-cache/o/0d56b2cf403d6e3707a6a70cd628d689/test",
+            "program": "zig-out/bin/iptree",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

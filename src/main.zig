@@ -5,9 +5,10 @@ const Address = std.net.Address;
 
 const Prefix = @import("prefix.zig").Prefix;
 const RadixTree = @import("radixTree.zig").RadixTree;
-const IpTree = @import("ipTree.zig").IpTree;
+const iptree = @import("ipTree.zig");
 const NodeData = @import("node.zig").NodeData;
 const ASNSource = @import("datasources/asn.zig").ASNSource;
+const Datasource = @import("datasources/datasource.zig").Datasource;
 
 pub fn main() !void {
     // stdout is for the actual output of your application, for example if you
@@ -24,12 +25,18 @@ pub fn main() !void {
         if (deinit_status == .leak) expect(false) catch @panic("TEST FAIL");
     }
 
-    var dst_tree = IpTree{};
-    var asn = ASNSource{ .file_path = "/var/log" };
-    try asn.fetch();
-    var source1 = asn.datasource();
-    try source1.load(&dst_tree, alloc);
-
+    var dst_tree = iptree.new(alloc);
+    var asn = ASNSource{ .base_dir = "data" };
+    const sources = [_]Datasource{
+        asn.datasource(),
+        // Here we'll just add the other sources
+    };
+    // Go over the dataousrces and if needed fetch them
+    for (0..sources.len) |i| {
+        var tmpsrc = sources[i];
+        try tmpsrc.fetch();
+        try tmpsrc.load(&dst_tree, alloc);
+    }
     _ = stdout;
     try bw.flush(); // don't forget to flush!
 }

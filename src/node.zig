@@ -26,6 +26,8 @@ pub const NodeData = struct {
     }
 };
 
+// A string formatting method for NodeData
+
 pub const Node = struct {
     prefix: Prefix,
     parent: ?*Node,
@@ -33,6 +35,45 @@ pub const Node = struct {
     right: ?*Node,
     data: ?NodeData,
     networkBits: u8 = 0,
+
+    pub fn format(
+        self: Node,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+        _ = options;
+
+        if (self.left != null) {
+            std.debug.print("Node has no left child{any}\n", .{self.left});
+        }
+        try out_stream.print("{any} :: <{*}, {*}>", .{ self.prefix, self.left, self.right });
+    }
+
+    pub fn assert_integrity(self: *const Node) !void {
+        // Assert child nodes are linked back to this node as a parent
+        if (self.left != null) {
+            // Assert the left child has this node as its parent
+            const parent_lp = self.left.?.*.parent;
+            std.debug.print("Comparing left parent with self: {*} == {*}\n", .{ parent_lp, self });
+            try expect(self.left.?.*.parent == self);
+        }
+        if (self.right != null) {
+            // Assert the right child has this node as its parent
+            try expect(self.right.?.*.parent == self);
+        }
+        // Assert this node's parent has the current node as a child
+        if (self.parent != null) {
+            try expect(self.parent.?.*.left == self or self.parent.?.*.right == self);
+        }
+        // assert we dont have recursive parent
+        var current: ?*Node = self.parent;
+        while (current) |node| {
+            try expect(node != self);
+            current = node.parent;
+        }
+    }
 };
 
 pub fn New(data: NodeData, prefix: Prefix) Node {
@@ -58,6 +99,48 @@ test "Node" {
         },
     };
     try expect(node.data != null);
+}
+
+test "Integrity check" {
+    // Arrange
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 0);
+    var root_node = Node{
+        .prefix = pfx,
+        .parent = null,
+        .left = null,
+        .right = null,
+        .data = .{
+            .asn = 0,
+            .datacenter = true,
+        },
+    };
+    var left_node = Node{
+        .prefix = pfx,
+        .parent = &root_node,
+        .left = null,
+        .right = null,
+        .data = .{
+            .asn = 1,
+            .datacenter = false,
+        },
+    };
+    var right_node = Node{
+        .prefix = pfx,
+        .parent = &root_node,
+        .left = null,
+        .right = null,
+        .data = .{
+            .asn = 2,
+            .datacenter = true,
+        },
+    };
+    root_node.left = &left_node;
+    root_node.right = &right_node;
+
+    // Act & assert
+    try root_node.assert_integrity();
+    try left_node.assert_integrity();
+    try right_node.assert_integrity();
 }
 
 test "Node merge" {

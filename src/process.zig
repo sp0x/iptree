@@ -74,7 +74,6 @@ pub fn exec(cwd: []const u8, argv: []const []const u8, allocator: Allocator) !Ch
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
     child.cwd = cwd;
-    child.env_map = null;
     child.spawn() catch |err| {
         std.debug.print("The following command failed:\n", .{});
         printCmd(cwd, argv);

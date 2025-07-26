@@ -5,16 +5,16 @@ const Prefix = @import("prefix.zig").Prefix;
 const NodeData = @import("node.zig").NodeData;
 const std = @import("std");
 const posix = std.posix;
+const print = std.debug.print;
 
 pub const IpTree = struct {
-    ipv4: RadixTree = RadixTree{},
-    ipv6: RadixTree = RadixTree{},
+    ipv4: RadixTree,
+    ipv6: RadixTree,
 
     pub fn insert(self: *IpTree, addr: []const u8, mask: u8, value: ?NodeData) !void {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
         var tree = try self.pickTree(prefix.family);
-        const node = try tree.insertPrefix(prefix);
-
+        const node = try tree.insert(prefix);
         node.*.data = value;
     }
 
@@ -32,6 +32,17 @@ pub const IpTree = struct {
         };
     }
 };
+
+pub fn new(allocator: std.mem.Allocator) IpTree {
+    return IpTree{
+        .ipv4 = RadixTree{
+            .allocator = allocator,
+        },
+        .ipv6 = RadixTree{
+            .allocator = allocator,
+        },
+    };
+}
 
 test "insert" {
     var tree = IpTree{};
