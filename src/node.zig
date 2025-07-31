@@ -46,17 +46,22 @@ pub const Node = struct {
     ) !void {
         if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
         _ = options;
-        try out_stream.print("{any}[{any}]\n", .{ self.prefix, self.data });
+        try self.printNode(out_stream, "", "");
+    }
+
+    fn printNode(self: *const Node, out_stream: anytype, indent: []const u8, pfx: []const u8) !void {
+        try out_stream.print("{s}{s}{any}[{any}]\n", .{ indent, pfx, self.prefix, self.data });
         const has_children = self.left != null or self.right != null;
-        if (!has_children) {
-            return;
-        }
+        if (!has_children) return;
+
+        var buffer = [_]u8{undefined} ** 100;
+        const indentation = try std.fmt.bufPrint(&buffer, "{s}  ", .{indent});
 
         if (self.left) |left| {
-            try out_stream.print("  ├──{any}\n", .{left});
+            try left.printNode(out_stream, indentation, "├── ");
         }
         if (self.right) |right| {
-            try out_stream.print("  └──{any}\n", .{right});
+            try right.printNode(out_stream, indentation, "└── ");
         }
     }
 

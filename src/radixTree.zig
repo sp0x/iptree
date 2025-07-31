@@ -443,12 +443,13 @@ test "adding many nodes" {
     var tree = RadixTree.init(allocator);
     const pfx = try Prefix.fromCidr("1.0.20.0/24");
     const pfx2 = try Prefix.fromCidr("1.0.21.0/24");
-    // const pfx3 = try Prefix.fromCidr("1.0.0.0/24");
+    const pfx3 = try Prefix.fromCidr("1.0.0.0/24");
     // const pfx4 = try Prefix.fromCidr("1.0.4.0/24");
     // const pfx5 = try Prefix.fromCidr("1.0.5.0/24");
     // const pfx6 = try Prefix.fromCidr("1.0.6.0/24");
     const n1 = try tree.insert(pfx);
     const n2 = try tree.insert(pfx2);
+    _ = try tree.insert(pfx3);
     n1.data = .{ .asn = 5 };
     n2.data = .{ .datacenter = true };
     const strx = try std.fmt.allocPrint(allocator, "{}", .{tree});
@@ -465,7 +466,7 @@ test "adding many nodes" {
     // n5.data = .{ .asn = 20 };
     // n6.data = .{ .asn = 25 };
 
-    try std.testing.expectEqual(3, tree.numberOfNodes);
+    try std.testing.expectEqual(5, tree.numberOfNodes);
 }
 
 test "addition or update when adding" {
