@@ -157,6 +157,7 @@ pub const RadixTree = struct {
         }
         if (newPrefixNetworkBits == differingBitIndex) {
             const tmpMask: u8 = newPrefixNetworkBits & 0x07;
+            print("New node: {d} {d}\n", .{ newPrefixNetworkBits, differingBitIndex });
             if (newPrefixNetworkBits < maxBits and cmp_bits(testAddressBytes[newPrefixNetworkBits >> 3], math.shr(u8, 0x80, tmpMask))) {
                 newNode.right = currentNode;
             } else {
@@ -183,6 +184,7 @@ pub const RadixTree = struct {
                 .left = null,
                 .right = null,
             };
+            const currentParent = currentNode.parent orelse null;
             newNode.parent = glueNode;
             currentNode.parent = glueNode;
             self.numberOfNodes += 1;
@@ -203,10 +205,10 @@ pub const RadixTree = struct {
 
             if (currentNode == self.head) {
                 self.head = glueNode;
-            } else if (currentNode.parent == currentNode) {
-                currentNode.parent.?.right = glueNode;
-            } else {
-                currentNode.parent.?.left = glueNode;
+            } else if (currentParent.?.right == currentNode) {
+                currentParent.?.right = glueNode;
+            } else if (currentParent.?.left == currentNode) {
+                currentParent.?.left = glueNode;
             }
 
             try glueNode.assert_integrity();
@@ -444,12 +446,16 @@ test "adding many nodes" {
     const pfx = try Prefix.fromCidr("1.0.20.0/24");
     const pfx2 = try Prefix.fromCidr("1.0.21.0/24");
     const pfx3 = try Prefix.fromCidr("1.0.0.0/24");
-    // const pfx4 = try Prefix.fromCidr("1.0.4.0/24");
-    // const pfx5 = try Prefix.fromCidr("1.0.5.0/24");
-    // const pfx6 = try Prefix.fromCidr("1.0.6.0/24");
+    const pfx4 = try Prefix.fromCidr("1.0.4.0/24");
+    const pfx5 = try Prefix.fromCidr("1.0.5.0/24");
+    const pfx6 = try Prefix.fromCidr("1.0.6.0/24");
     const n1 = try tree.insert(pfx);
     const n2 = try tree.insert(pfx2);
     _ = try tree.insert(pfx3);
+    _ = try tree.insert(pfx4);
+    _ = try tree.insert(pfx5);
+    _ = try tree.insert(pfx6);
+
     n1.data = .{ .asn = 5 };
     n2.data = .{ .datacenter = true };
     const strx = try std.fmt.allocPrint(allocator, "{}", .{tree});
@@ -466,7 +472,7 @@ test "adding many nodes" {
     // n5.data = .{ .asn = 20 };
     // n6.data = .{ .asn = 25 };
 
-    try std.testing.expectEqual(5, tree.numberOfNodes);
+    try std.testing.expectEqual(11, tree.numberOfNodes);
 }
 
 test "addition or update when adding" {
