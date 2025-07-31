@@ -1,4 +1,6 @@
 const Prefix = @import("prefix.zig").Prefix;
+const utils = @import("utils.zig");
+const assert = utils.assert;
 const std = @import("std");
 const testing = std.testing;
 const expect = std.testing.expect;
@@ -44,33 +46,40 @@ pub const Node = struct {
     ) !void {
         if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
         _ = options;
-
-        if (self.left != null) {
-            std.debug.print("Node has no left child{any}\n", .{self.left});
+        try out_stream.print("{any}[{any}]\n", .{ self.prefix, self.data });
+        const has_children = self.left != null or self.right != null;
+        if (!has_children) {
+            return;
         }
-        try out_stream.print("{any} :: <{*}, {*}>", .{ self.prefix, self.left, self.right });
+
+        if (self.left) |left| {
+            try out_stream.print("  ├──{any}\n", .{left});
+        }
+        if (self.right) |right| {
+            try out_stream.print("  └──{any}\n", .{right});
+        }
     }
 
     pub fn assert_integrity(self: *const Node) !void {
-        // Assert child nodes are linked back to this node as a parent
+        // Assert that:
+        // Child nodes have this node as a parent.
+        // This node's parent has this node as a child.
         if (self.left != null) {
-            // Assert the left child has this node as its parent
-            const parent_lp = self.left.?.*.parent;
-            std.debug.print("Comparing left parent with self: {*} == {*}\n", .{ parent_lp, self });
-            try expect(self.left.?.*.parent == self);
+            // std.debug.print("Comparing left parent with self: {*} == {*}\n", .{ self.left.?.*.parent, self });
+            assert(self.left.?.*.parent == self, "Left child parent mismatch", .{});
         }
         if (self.right != null) {
-            // Assert the right child has this node as its parent
-            try expect(self.right.?.*.parent == self);
+            // std.debug.print("Comparing right parent with self: {*} == {*}\n", .{ self.right.?.*.parent, self });
+            assert(self.right.?.*.parent == self, "Right child parent mismatch", .{});
         }
-        // Assert this node's parent has the current node as a child
+
         if (self.parent != null) {
-            try expect(self.parent.?.*.left == self or self.parent.?.*.right == self);
+            assert(self.parent.?.*.left == self or self.parent.?.*.right == self, "Parent child mismatch", .{});
         }
         // assert we dont have recursive parent
-        var current: ?*Node = self.parent;
+        var current = self.parent;
         while (current) |node| {
-            try expect(node != self);
+            assert(node != self, "Node is its own ancestor", .{});
             current = node.parent;
         }
     }

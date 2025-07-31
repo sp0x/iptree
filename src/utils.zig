@@ -12,6 +12,17 @@ pub fn days_since_modification(dataset_dir: fs.Dir, descriptor: []const u8) !u64
     return @bitCast(math.lossyCast(i64, days));
 }
 
+pub fn assert(ok: bool, comptime message: []const u8, args: anytype) void {
+    if (!ok) {
+        // assertion failure
+        if (std.debug.runtime_safety) {
+            std.debug.panicExtra(@returnAddress(), message, args);
+        } else {
+            unreachable;
+        }
+    }
+}
+
 pub fn last_modified(dataset_dir: fs.Dir, descriptor: []const u8) !i64 {
     const ipv4_data_file = dataset_dir.openFile(descriptor, .{ .mode = .read_only }) catch |err| {
         if (err == error.FileNotFound) {

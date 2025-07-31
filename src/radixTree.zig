@@ -79,7 +79,6 @@ pub const RadixTree = struct {
         const addressBytes = prefix.asBytes();
         const newPrefixNetworkBits = prefix.networkBits;
         var currentNode = self.head.?;
-        print("-1\n", .{});
         // Find a place where to insert the new node, trying to find a wider CIDR to insert into.
         while (currentNode.networkBits < newPrefixNetworkBits or currentNode.prefix.isEmpty()) {
             const low_3_bits: u8 = currentNode.networkBits & 0x07;
@@ -96,19 +95,17 @@ pub const RadixTree = struct {
                 currentNode = currentNode.left.?;
             }
         }
-        print("00\n", .{});
         const testAddressBytes = currentNode.prefix.asBytes();
         const bitsToCheck = if (currentNode.networkBits < newPrefixNetworkBits)
             currentNode.networkBits
         else
             newPrefixNetworkBits;
-        var differBit: u8 = 0;
+        var differingBitIndex: u8 = 0;
         var i: u8 = 0;
-        print("0\n", .{});
         while (i * 8 < bitsToCheck) : (i += 1) {
             const r = addressBytes[i] ^ testAddressBytes[i];
             if (r == 0) {
-                differBit = (i + 1) * 8;
+                differingBitIndex = (i + 1) * 8;
                 continue;
             }
 
@@ -117,18 +114,18 @@ pub const RadixTree = struct {
                 const shiftedJ = math.shr(u8, 0x80, j);
                 if (cmp_bits(r, shiftedJ)) break;
             }
-            differBit = i * 8 + j;
+            differingBitIndex = i * 8 + j;
             break;
         }
-        if (differBit > bitsToCheck) differBit = bitsToCheck;
+        if (differingBitIndex > bitsToCheck) differingBitIndex = bitsToCheck;
 
         var parent = currentNode.parent;
-        while (parent != null and parent.?.networkBits >= differBit) {
+        while (parent != null and parent.?.networkBits >= differingBitIndex) {
             currentNode = parent.?;
             parent = currentNode.parent;
         }
 
-        if (differBit == newPrefixNetworkBits and currentNode.networkBits == newPrefixNetworkBits) {
+        if (differingBitIndex == newPrefixNetworkBits and currentNode.networkBits == newPrefixNetworkBits) {
             if (currentNode.prefix.isEmpty()) {
                 currentNode.prefix = prefix; // try prefix.clone();
             }
@@ -136,7 +133,8 @@ pub const RadixTree = struct {
         }
 
         var resultingNode: *Node = undefined;
-        var newNode = Node{
+        var newNode = try self.allocator.create(Node);
+        newNode.* = Node{
             .networkBits = prefix.networkBits,
             .prefix = prefix, // try prefix.clone(),
             .parent = null,
@@ -145,87 +143,73 @@ pub const RadixTree = struct {
             .data = undefined,
         };
         self.numberOfNodes += 1;
-        print("1\n", .{});
-        if (currentNode.networkBits == differBit) {
+        if (currentNode.networkBits == differingBitIndex) {
             newNode.parent = currentNode;
             const tmpMask: u8 = currentNode.networkBits & 0x07;
             if (currentNode.networkBits < maxBits and cmp_bits(addressBytes[currentNode.networkBits >> 3], math.shr(u8, 0x80, tmpMask))) {
                 currentNode.right = try self.allocator.create(Node);
-                currentNode.right.?.* = newNode;
+                currentNode.right.? = newNode;
             } else {
                 currentNode.left = try self.allocator.create(Node);
-                currentNode.left.?.* = newNode;
+                currentNode.left.? = newNode;
             }
             return currentNode.left.?;
         }
-        print("2\n", .{});
-        if (newPrefixNetworkBits == differBit) {
+        if (newPrefixNetworkBits == differingBitIndex) {
             const tmpMask: u8 = newPrefixNetworkBits & 0x07;
             if (newPrefixNetworkBits < maxBits and cmp_bits(testAddressBytes[newPrefixNetworkBits >> 3], math.shr(u8, 0x80, tmpMask))) {
                 newNode.right = currentNode;
             } else {
                 newNode.left = currentNode;
             }
-            print("2.2\n", .{});
             newNode.parent = currentNode.parent;
             if (currentNode.parent == null) {
-                self.head.?.* = newNode;
+                self.head = newNode;
             } else if (currentNode.parent.?.right == currentNode) {
-                currentNode.parent.?.right = try self.allocator.create(Node);
-                currentNode.parent.?.right.?.* = newNode;
+                currentNode.parent.?.right = newNode;
                 return currentNode.parent.?.right.?;
             } else {
-                currentNode.parent.?.left = try self.allocator.create(Node);
-                currentNode.parent.?.left.?.* = newNode;
+                currentNode.parent.?.left = newNode;
                 return currentNode.parent.?.left.?;
             }
         } else {
-            print("3\n", .{});
-            var glueNode = Node{
-                .networkBits = differBit,
+            var glueNode = try self.allocator.create(Node);
+            glueNode.* = Node{
+                .networkBits = differingBitIndex,
                 .prefix = Prefix.empty(),
+                // TODO:: Make sure this is correct.
                 .parent = currentNode.parent,
                 .data = undefined,
                 .left = null,
                 .right = null,
             };
-            newNode.parent = &glueNode;
+            newNode.parent = glueNode;
+            currentNode.parent = glueNode;
             self.numberOfNodes += 1;
+            resultingNode = newNode;
 
-            const tmpMask: u8 = differBit & 0x07;
+            const tmpMask: u8 = differingBitIndex & 0x07;
             const shiftedMask = math.shr(u8, 0x80, tmpMask);
             // Figure out where to put the new node, left or right.
-            if (differBit < maxBits and cmp_bits(addressBytes[differBit >> 3], shiftedMask)) {
-                glueNode.right = try self.allocator.create(Node);
-                glueNode.right.?.* = newNode;
+            if (differingBitIndex < maxBits and cmp_bits(addressBytes[differingBitIndex >> 3], shiftedMask)) {
+                glueNode.right = newNode;
                 glueNode.left = currentNode;
-                print("glueNode: {*} --left-- {*}", .{ glueNode, currentNode });
-                currentNode.parent = &glueNode;
-                std.debug.print("Glueing network to the right: {d}\n", .{glueNode.networkBits});
-                resultingNode = glueNode.right.?;
+                // std.debug.print("Glueing {d}: {d} {d}(new)\n", .{ differingBitIndex, currentNode.networkBits, newNode.networkBits });
             } else {
-                std.debug.print("Glueing network to the left: {d}\n", .{glueNode.networkBits});
+                // std.debug.print("Glueing {d}: {d}(new) {d}\n", .{ differingBitIndex, newNode.networkBits, currentNode.networkBits });
                 glueNode.right = currentNode;
-                glueNode.left = try self.allocator.create(Node);
-                glueNode.left.?.* = newNode;
-                resultingNode = glueNode.left.?;
+                glueNode.left = newNode;
             }
 
-            if (currentNode.parent == null) {
-                self.head.?.* = glueNode;
-            } else if (currentNode.parent.?.right == currentNode) {
-                currentNode.parent.?.right.?.* = glueNode;
+            if (currentNode == self.head) {
+                self.head = glueNode;
+            } else if (currentNode.parent == currentNode) {
+                currentNode.parent.?.right = glueNode;
             } else {
-                currentNode.parent.?.left.?.* = glueNode;
+                currentNode.parent.?.left = glueNode;
             }
 
-            if (currentNode.parent == null) {
-                currentNode.parent = try self.allocator.create(Node);
-            }
-            currentNode.parent.?.* = glueNode;
             try glueNode.assert_integrity();
-            std.debug.print("Glued node with network: {d}\n", .{glueNode.networkBits});
-            // std.debug.print("Left: {}\tRight: {}\n", .{ glueNode.left.?.prefix, glueNode.right.?.prefix });
         }
 
         try resultingNode.assert_integrity();
@@ -445,6 +429,7 @@ test "construction and adding multiple items" {
     const pfx = try Prefix.fromCidr("1.0.0.0/8");
     const pfx2 = try Prefix.fromCidr("2.0.0.0/8");
     const n1 = try tree.insert(pfx);
+    // TODO: This fails, second node isn't properly inserted.
     const n2 = try tree.insert(pfx2);
     n1.data = .{ .asn = 5 };
     n2.data = .{ .datacenter = true };
@@ -464,6 +449,8 @@ test "adding many nodes" {
     // const pfx6 = try Prefix.fromCidr("1.0.6.0/24");
     const n1 = try tree.insert(pfx);
     const n2 = try tree.insert(pfx2);
+    n1.data = .{ .asn = 5 };
+    n2.data = .{ .datacenter = true };
     const strx = try std.fmt.allocPrint(allocator, "{}", .{tree});
     defer allocator.free(strx);
     std.debug.print("Tree: {s}\n", .{strx});
