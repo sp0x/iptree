@@ -1,9 +1,12 @@
 const std = @import("std");
+const posix = std.posix;
+const net = std.net;
 const mem = std.mem;
 const math = std.math;
 const testing = std.testing;
 const expect = std.testing.expect;
 const Prefix = @import("prefix.zig").Prefix;
+const utils = @import("utils.zig");
 const NodeMod = @import("node.zig");
 const Node = NodeMod.Node;
 const NodeData = NodeMod.NodeData;
@@ -178,7 +181,6 @@ pub const RadixTree = struct {
             glueNode.* = Node{
                 .networkBits = differingBitIndex,
                 .prefix = Prefix.empty(),
-                // TODO:: Make sure this is correct.
                 .parent = currentNode.parent,
                 .data = undefined,
                 .left = null,
@@ -431,7 +433,6 @@ test "construction and adding multiple items" {
     const pfx = try Prefix.fromCidr("1.0.0.0/8");
     const pfx2 = try Prefix.fromCidr("2.0.0.0/8");
     const n1 = try tree.insert(pfx);
-    // TODO: This fails, second node isn't properly inserted.
     const n2 = try tree.insert(pfx2);
     n1.data = .{ .asn = 5 };
     n2.data = .{ .datacenter = true };
@@ -454,25 +455,45 @@ test "adding many nodes" {
     _ = try tree.insert(pfx3);
     _ = try tree.insert(pfx4);
     _ = try tree.insert(pfx5);
-    _ = try tree.insert(pfx6);
+    const n6 = try tree.insert(pfx6);
 
     n1.data = .{ .asn = 5 };
     n2.data = .{ .datacenter = true };
-    const strx = try std.fmt.allocPrint(allocator, "{}", .{tree});
-    defer allocator.free(strx);
-    std.debug.print("Tree: {s}\n", .{strx});
-    //const n3 = try tree.insert(pfx3);
-    // const n4 = try tree.insert(pfx4);
-    // const n5 = try tree.insert(pfx5);
-    // const n6 = try tree.insert(pfx6);
+    n6.data = .{ .asn = 25, .datacenter = true };
+    //    print("Tree: {any}\n", .{tree});
     n1.data = .{ .asn = 5 };
     n2.data = .{ .datacenter = true };
-    // n3.data = .{ .asn = 10 };
-    // n4.data = .{ .asn = 15 };
-    // n5.data = .{ .asn = 20 };
-    // n6.data = .{ .asn = 25 };
 
     try std.testing.expectEqual(11, tree.numberOfNodes);
+}
+
+test "building a tree with a thousand nodes" {
+    const allocator = std.heap.page_allocator;
+    var tree = RadixTree.init(allocator);
+    var ip_n: u32 = 0;
+    for (0..1000) |i| {
+        ip_n += 256;
+        const address: net.Address = .{
+            .in = .{
+                .sa = .{
+                    .addr = @as(u32, ip_n),
+                    .port = 0,
+                },
+            },
+        };
+        var ip_buff = std.ArrayList(u8).init(allocator);
+        defer ip_buff.deinit();
+        try utils.ip_fmt(address, &ip_buff.writer());
+        try ip_buff.appendSlice("/24");
+
+        const pfx = try Prefix.fromCidr(ip_buff.items);
+        const node = try tree.insert(pfx);
+        if (i % 2 == 0) {
+            node.data = .{ .asn = @intCast(i) };
+        } else {
+            node.data = .{ .datacenter = true };
+        }
+    }
 }
 
 test "addition or update when adding" {
@@ -489,8 +510,10 @@ test "should be searchable" {
     const allocator = std.heap.page_allocator;
     var tree = RadixTree.init(allocator);
     const parent = try Prefix.fromCidr("1.0.0.0/8");
+    const ip_seg_2 = try Prefix.fromCidr("2.0.0.0/8");
     const node = try tree.insert(parent);
     node.data = .{ .asn = 5 };
+    _ = try tree.insert(ip_seg_2);
 
     const pfx = try Prefix.fromCidr("1.1.1.0/32");
     const result = tree.SearchBest(pfx);
