@@ -4,6 +4,7 @@ const assert = utils.assert;
 const std = @import("std");
 const testing = std.testing;
 const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 
 pub const NodeData = struct {
     asn: ?u32 = null,
@@ -169,8 +170,8 @@ test "Node merge" {
 
     nodeData1.merge(&nodeData2, true);
 
-    try expect(nodeData1.asn == 55);
-    try expect(nodeData1.datacenter == true);
+    try expectEqual(55, nodeData1.asn);
+    try expectEqual(true, nodeData1.datacenter);
 }
 
 test "Node merge overwrite" {
@@ -185,7 +186,7 @@ test "Node merge overwrite" {
 
     nodeData1.merge(&nodeData2, true);
 
-    try testing.expectEqual(56, nodeData1.asn);
+    try expectEqual(56, nodeData1.asn);
     try expect(nodeData1.datacenter.?);
 }
 
@@ -201,8 +202,8 @@ test "Node merge without overwrite" {
 
     nodeData1.merge(&nodeData2, false);
 
-    try expect(nodeData1.asn == 55);
-    try expect(nodeData1.datacenter == true);
+    try expectEqual(55, nodeData1.asn);
+    try expectEqual(true, nodeData1.datacenter);
 }
 
 test "Node merge without overwrite and value change" {
@@ -217,6 +218,6 @@ test "Node merge without overwrite and value change" {
 
     nodeData1.merge(&nodeData2, false);
 
-    try testing.expectEqual(55, nodeData1.asn);
+    try expectEqual(55, nodeData1.asn);
     try expect(nodeData1.datacenter.?);
 }
