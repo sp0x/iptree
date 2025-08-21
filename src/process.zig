@@ -61,7 +61,7 @@ fn get_proc_streams() !proc_streams {
     };
 }
 
-pub fn exec(cwd: []const u8, argv: []const []const u8, allocator: Allocator) !ChildProcess.Term {
+pub fn exec(cwd: ?[]const u8, argv: []const []const u8, allocator: Allocator) !ChildProcess.Term {
     var streams = try get_proc_streams();
     defer streams.flushall() catch |err| {
         std.debug.print("Error flushing streams: {}\n", .{err});
@@ -119,9 +119,22 @@ pub fn exec(cwd: []const u8, argv: []const []const u8, allocator: Allocator) !Ch
     };
 }
 
-fn printCmd(cwd: []const u8, argv: []const []const u8) void {
-    std.debug.print("cd {s} && ", .{cwd});
-    for (argv) |arg| {
+fn printCmd(cwd: ?[]const u8, argv: []const []const u8) void {
+    if (cwd != null) {
+        std.debug.print("DIR: {s}\n", .{cwd.?});
+    }
+    if (argv.len == 0) {
+        std.debug.print("No command to execute\n", .{});
+        return;
+    }
+    std.debug.print("Command: {s}\n", .{argv[0]});
+    if (argv.len == 1) {
+        std.debug.print("No arguments provided\n", .{});
+        return;
+    }
+    std.debug.print("Arguments: ", .{});
+    for (1..argv.len) |i| {
+        const arg = argv[i];
         std.debug.print("{s} ", .{arg});
     }
     std.debug.print("\n", .{});

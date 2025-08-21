@@ -56,12 +56,7 @@ pub fn assert(ok: bool, comptime message: []const u8, args: anytype) void {
 }
 
 pub fn last_modified(dataset_dir: fs.Dir, descriptor: []const u8) !i64 {
-    const ipv4_data_file = dataset_dir.openFile(descriptor, .{ .mode = .read_only }) catch |err| {
-        if (err == error.FileNotFound) {
-            return 0;
-        }
-        return err;
-    };
+    const ipv4_data_file = try dataset_dir.openFile(descriptor, .{ .mode = .read_only });
     defer ipv4_data_file.close();
     const ipv4_meta = try ipv4_data_file.metadata();
     const ipv4_ts_nano = ipv4_meta.modified();

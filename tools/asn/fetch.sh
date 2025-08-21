@@ -10,11 +10,7 @@ if [ ! -d "$distDirectory" ]; then
 fi
 
 echo "Fetching ASN database ..." >&2
-# Check if the pyasn pip module is installed
-if ! python3 -m pip show pyasn > /dev/null 2>&1; then
-    echo "pyasn pip module not found. Can't continue forward..."
-    exit 1
-fi
+# Here we assume that you've activated the virtual environment and also installed all deps in the pyproject.toml file, probably using UV or poetry.
 
 # Get the directory of the current script
 scriptDirectory="$(dirname "$(realpath "$0")")"

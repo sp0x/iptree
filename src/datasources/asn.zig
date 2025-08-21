@@ -57,7 +57,10 @@ pub const ASNSource = struct {
         const cwd = fs.cwd();
         const ipv4_file_path = try fs.path.join(allocator, &.{ self.base_dir, "rib.dat" });
         defer allocator.free(ipv4_file_path);
-        const ipv4_file = try cwd.openFile(ipv4_file_path, .{ .mode = .read_only });
+        const ipv4_file = cwd.openFile(ipv4_file_path, .{ .mode = .read_only }) catch |err| {
+            print("Failed to open ASN file {s}: {any}\n", .{ ipv4_file_path, err });
+            return err; // Propagate the error
+        };
         defer ipv4_file.close();
         const fsize = try ipv4_file.getEndPos();
 
@@ -81,23 +84,34 @@ pub const ASNSource = struct {
 
     pub fn free(_: *ASNSource) void {}
 
+    fn fetch_new_data(self: *ASNSource) !void {
+        const allocator = std.heap.page_allocator;
+        var build_args = std.ArrayList([]const u8).init(allocator);
+        defer build_args.deinit();
+        try build_args.appendSlice(&[_][]const u8{ FETCH_SCRIPT, self.base_dir });
+
+        const res = try exec(null, build_args.items, allocator);
+        print("ASN Fetching result:\n{}\n", .{res});
+    }
+
     /// Fetches the resources in ./dataset_asn
     pub fn fetch(self: *ASNSource) !void {
-        const allocator = std.heap.page_allocator;
         const dst_dir = try fs.cwd().makeOpenPath(self.base_dir, .{});
 
-        const n_days = try utils.days_since_modification(dst_dir, "rib.dat");
+        const n_days = utils.days_since_modification(dst_dir, "rib.dat") catch |err| {
+            if (err == error.FileNotFound) {
+                // If the file does not exist, we should fetch it
+                return self.fetch_new_data();
+            }
+            print("Failed to get modification time for ASN data: {any}\n", .{err});
+            return err; // Propagate the error
+        };
         if (n_days < DATA_MAX_STALENESS_DAYS) {
             print("ASN data is fresh enough ({} days old), skipping fetch.\n", .{n_days});
             return;
         }
-        var build_args = std.ArrayList([]const u8).init(allocator);
-        defer build_args.deinit();
-        print("Fetching ASN data in dir {s}\n", .{self.base_dir});
-        try build_args.appendSlice(&[_][]const u8{ FETCH_SCRIPT, self.base_dir });
 
-        const res = try exec(self.base_dir, build_args.items, allocator);
-        print("ASN Fetching result:\n{}\n", .{res});
+        try self.fetch_new_data();
     }
 
     pub fn datasource(self: *ASNSource) Datasource {

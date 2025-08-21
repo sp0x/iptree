@@ -1,0 +1,20 @@
+version = 1
+revision = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "iptree"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "pyasn" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyasn", specifier = ">=1.6.2" }]
+
+[[package]]
+name = "pyasn"
+version = "1.6.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/55/881259e00d62ac11713567ada5152b0ad3a744e9f12d5d1f115d40bf17d9/pyasn-1.6.2.tar.gz", hash = "sha256:a2d55fb3ee47947609f50211ca5b0bac411a86f3c935fb92ca4b0b8ab7c668ff", size = 49132 }
