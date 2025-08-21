@@ -51,7 +51,7 @@ fn parse_line(line: []const u8, tree: *IpTree) !void {
 
 pub const ASNSource = struct {
     // The base directory for the ASN data
-    base_dir: []const u8,
+    base_dir: []const u8 = "",
 
     pub fn load(self: *ASNSource, tree: *IpTree, allocator: Allocator) !void {
         const cwd = fs.cwd();
@@ -91,13 +91,25 @@ pub const ASNSource = struct {
         try build_args.appendSlice(&[_][]const u8{ FETCH_SCRIPT, self.base_dir });
 
         const res = try exec(null, build_args.items, allocator);
-        print("ASN Fetching result:\n{}\n", .{res});
+        if (res.Exited != 0) {
+            print("Failed to fetch ASN data. Non-zero result: {d}\n", .{res.Exited});
+            return error.NotImplemented; // Or handle the error as needed
+        }
     }
 
     /// Fetches the resources in ./dataset_asn
     pub fn fetch(self: *ASNSource) !void {
-        const dst_dir = try fs.cwd().makeOpenPath(self.base_dir, .{});
-
+        var dst_dir: fs.Dir = undefined;
+        if (self.base_dir.len == 0) {
+            // If no base_dir is set, use the current working directory
+            dst_dir = fs.cwd();
+        } else {
+            // If base_dir is set, use it
+            dst_dir = fs.cwd().makeOpenPath(self.base_dir, .{}) catch |err| {
+                print("Failed to open base directory {s}: {any}\n", .{ self.base_dir, err });
+                return err; // Propagate the error
+            };
+        }
         const n_days = utils.days_since_modification(dst_dir, "rib.dat") catch |err| {
             if (err == error.FileNotFound) {
                 // If the file does not exist, we should fetch it

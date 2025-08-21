@@ -2,14 +2,20 @@
 
 # Base path passed as the first argument
 basePath="$1"
+# Check if basePath is provided
+if [ -z "$basePath" ]; then
+    basePath=$(pwd)
+fi
 
 # Define the distribution directory
-distDirectory="$basePath/data"
+distDirectory="$basePath"
+# If basePath is "data", distDirectory shouuld be "data" as well.
+
 if [ ! -d "$distDirectory" ]; then
     mkdir -p "$distDirectory"
 fi
 
-echo "Fetching ASN database ..." >&2
+echo "Downloading ASN data to $distDirectory..." >&2
 # Here we assume that you've activated the virtual environment and also installed all deps in the pyproject.toml file, probably using UV or poetry.
 
 # Get the directory of the current script
