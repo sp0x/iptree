@@ -5,6 +5,7 @@ const mem = std.mem;
 const math = std.math;
 const testing = std.testing;
 const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 const Prefix = @import("prefix.zig").Prefix;
 const utils = @import("utils.zig");
 const NodeMod = @import("node.zig");
@@ -16,7 +17,7 @@ const print = std.debug.print;
 const maxBits: u8 = 32;
 
 pub const SearchResult = struct { node: ?*const Node, data: ?NodeData };
-const WalkOp = *const fn (node: *Node) void;
+const WalkOp = *const fn (node: *Node, state: *anyopaque) void;
 
 pub const RadixTree = struct {
     allocator: mem.Allocator,
@@ -248,14 +249,14 @@ pub const RadixTree = struct {
         return null;
     }
 
-    pub fn walk(self: *RadixTree, node: *Node, f: WalkOp) void {
+    pub fn walk(self: *RadixTree, node: *Node, f: WalkOp, state: *anyopaque) void {
         if (node.left) |left| {
-            self.walk(left, f);
+            self.walk(left, f, state);
         }
         if (node.right) |right| {
-            self.walk(right, f);
+            self.walk(right, f, state);
         }
-        f(node);
+        f(node, state);
     }
 
     /// Search for the best match for a given IP/CIDR in the radix tree.
@@ -494,7 +495,44 @@ test "building a tree with a thousand nodes" {
             node.data = .{ .datacenter = true };
         }
     }
+    // We should have more than 1000 nodes, because of the way the tree works.
+    // Some nodes will be merged, some will be added as children.
+    // The exact number of nodes will depend on the distribution of the IPs.
+    try expectEqual(1999, tree.numberOfNodes);
+    try expect(tree.head != null);
+    var state = walk_state{
+        .found_asns = 0,
+        .found_datacenters = 0,
+    };
+    tree.walk(tree.head.?, struct {
+        pub fn call(node: *Node, st: *anyopaque) void {
+            // This is just a placeholder to ensure the walk works.
+            // In a real test, you might want to check the node's data or properties.
+            node.assert_integrity() catch |err| {
+                std.debug.print("Node integrity check failed: {}\n", .{err});
+            };
+            if (node.data == null) {
+                return;
+            }
+            // Increment the counters based on the node's data.
+            var lp_st: *walk_state = @ptrCast(@alignCast(st));
+            if (node.data.?.asn) |_| {
+                lp_st.found_asns += 1;
+            }
+            if (node.data.?.datacenter) |_| {
+                lp_st.found_datacenters += 1;
+            }
+        }
+    }.call, &state);
+
+    try expectEqual(state.found_asns, 500);
+    try expectEqual(state.found_datacenters, 500);
 }
+
+const walk_state = struct {
+    found_asns: u16,
+    found_datacenters: u16,
+};
 
 test "addition or update when adding" {
     const allocator = std.heap.page_allocator;
