@@ -25,7 +25,7 @@ const DATA_MAX_STALENESS_DAYS = 7;
 
 fn parse_line(line: []const u8, tree: *IpTree) !void {
     if (line[0] == '#' or line[0] == ';') return; // Skip comments
-    print("Parsing line: {s}\n", .{line});
+    // print("Parsing line: {s}\n", .{line});
     var line_seq = std.mem.splitSequence(u8, line, "\t");
 
     // Parse the ASN and IP prefix
@@ -42,7 +42,6 @@ fn parse_line(line: []const u8, tree: *IpTree) !void {
         print("Failed to parse ASN: {any}: {any}\n", .{ asn_str, err });
         return;
     };
-    print("Inserting IP: {s}, Mask: {d}, ASN: {d}\n", .{ ip, mask, asn });
     // Insert into the tree
     try tree.insert(ip, mask, .{
         .asn = asn,
@@ -55,6 +54,7 @@ pub const ASNSource = struct {
 
     pub fn load(self: *ASNSource, tree: *IpTree, allocator: Allocator) !void {
         const cwd = fs.cwd();
+
         const ipv4_file_path = try fs.path.join(allocator, &.{ self.base_dir, "rib.dat" });
         defer allocator.free(ipv4_file_path);
         const ipv4_file = cwd.openFile(ipv4_file_path, .{ .mode = .read_only }) catch |err| {
@@ -63,10 +63,11 @@ pub const ASNSource = struct {
         };
         defer ipv4_file.close();
         const fsize = try ipv4_file.getEndPos();
-
         const ipv4_buff = try cwd.readFileAlloc(allocator, ipv4_file_path, fsize);
         defer allocator.free(ipv4_buff);
+
         var line_iterator = std.mem.splitSequence(u8, ipv4_buff, "\n");
+        var line_count: u32 = 0;
         while (line_iterator.next()) |line| {
             // Skip empty lines
             if (line.len == 0) {
@@ -77,6 +78,7 @@ pub const ASNSource = struct {
                 print("Error parsing line: {any}\n", .{line});
                 return err; // Propagate the error
             };
+            line_count += 1;
         }
 
         print("ASN data loaded successfully from {s}\n", .{ipv4_file_path});

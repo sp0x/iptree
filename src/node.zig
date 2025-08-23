@@ -5,6 +5,7 @@ const std = @import("std");
 const testing = std.testing;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
+const print = std.debug.print;
 
 pub const NodeData = struct {
     asn: ?u32 = null,

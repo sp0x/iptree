@@ -31,6 +31,11 @@ pub const IpTree = struct {
             else => return error.UnsupportedFamily,
         };
     }
+
+    pub fn free(self: *IpTree) void {
+        self.ipv4.free();
+        self.ipv6.free();
+    }
 };
 
 pub fn new(allocator: std.mem.Allocator) IpTree {

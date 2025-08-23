@@ -26,6 +26,7 @@ pub fn main() !void {
     }
 
     var dst_tree = iptree.new(alloc);
+    defer dst_tree.free();
     var asn = ASNSource{ .base_dir = "data" };
     const sources = [_]Datasource{
         asn.datasource(),
@@ -37,6 +38,6 @@ pub fn main() !void {
         try tmpsrc.fetch();
         try tmpsrc.load(&dst_tree, alloc);
     }
-    _ = stdout;
+    try stdout.print("Merged tree has {d} nodes\n", .{dst_tree.ipv4.numberOfNodes + dst_tree.ipv6.numberOfNodes});
     try bw.flush(); // don't forget to flush!
 }
