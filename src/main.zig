@@ -18,15 +18,18 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
     defer {
         const deinit_status = gpa.deinit();
         //fail test; can't try in defer as defer is executed after we return
         if (deinit_status == .leak) expect(false) catch @panic("TEST FAIL");
     }
 
-    var dst_tree = iptree.new(alloc);
-    defer dst_tree.free();
+    var dst_tree = iptree.new(arena_allocator);
     var asn = ASNSource{ .base_dir = "data" };
     const sources = [_]Datasource{
         asn.datasource(),
@@ -36,8 +39,20 @@ pub fn main() !void {
     for (0..sources.len) |i| {
         var tmpsrc = sources[i];
         try tmpsrc.fetch();
-        try tmpsrc.load(&dst_tree, alloc);
+        try tmpsrc.load(&dst_tree, gpa.allocator());
     }
     try stdout.print("Merged tree has {d} nodes\n", .{dst_tree.ipv4.numberOfNodes + dst_tree.ipv6.numberOfNodes});
+    var arg_iter = std.process.ArgIterator.init();
+    var i: usize = 0;
+    while (arg_iter.next()) |arg| {
+        i += 1;
+        if (i == 1) continue; // skip arg 0 which is the program
+        const data = dst_tree.searchBest(arg, 32) catch |err| {
+            try stdout.print("Search failed: {}\n", .{err});
+            return err;
+        };
+        try stdout.print("Search result for {s}/{d}: {?}\n", .{ arg, 32, data });
+    }
+
     try bw.flush(); // don't forget to flush!
 }
