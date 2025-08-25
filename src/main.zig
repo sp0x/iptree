@@ -47,11 +47,17 @@ pub fn main() !void {
     while (arg_iter.next()) |arg| {
         i += 1;
         if (i == 1) continue; // skip arg 0 which is the program
-        const data = dst_tree.searchBest(arg, 32) catch |err| {
+        const sr_result = dst_tree.searchBest(arg, 32) catch |err| {
             try stdout.print("Search failed: {}\n", .{err});
             return err;
         };
-        try stdout.print("Search result for {s}/{d}: {?}\n", .{ arg, 32, data });
+        if (sr_result == null) {
+            try stdout.print("No data for {s}\n", .{arg});
+            continue;
+        }
+        const data = sr_result.?.data;
+
+        try stdout.print("{s}/{d}: {?}\n", .{ arg, 32, data });
     }
 
     try bw.flush(); // don't forget to flush!

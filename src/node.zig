@@ -28,6 +28,17 @@ pub const NodeData = struct {
         self.asn = asnVal;
         self.datacenter = datacenterVal;
     }
+
+    pub fn format(
+        self: NodeData,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+        _ = options;
+        try out_stream.print("asn: {?}, datacenter: {?}", .{ self.asn, self.datacenter });
+    }
 };
 
 // A string formatting method for NodeData
