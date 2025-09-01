@@ -10,6 +10,7 @@ const print = std.debug.print;
 pub const NodeData = struct {
     asn: ?u32 = null,
     datacenter: ?bool = null,
+    name: ?[]const u8 = null,
 
     pub fn isComplete(self: *const NodeData) bool {
         return self.asn != null and self.datacenter != null;
@@ -18,6 +19,10 @@ pub const NodeData = struct {
     pub fn merge(self: *NodeData, other: *const NodeData, overwrite: bool) void {
         var asnVal = self.asn orelse other.asn;
         var datacenterVal = self.datacenter orelse other.datacenter;
+        var nameVal = self.name orelse other.name;
+        if (overwrite and other.name != null) {
+            nameVal = other.name;
+        }
         if (overwrite and other.asn != null) {
             asnVal = other.asn;
         }
@@ -27,6 +32,7 @@ pub const NodeData = struct {
 
         self.asn = asnVal;
         self.datacenter = datacenterVal;
+        self.name = nameVal;
     }
 
     pub fn format(
@@ -37,7 +43,17 @@ pub const NodeData = struct {
     ) !void {
         if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
         _ = options;
+        if (self.name != null) {
+            try out_stream.print("name: {s} ", .{self.name.?});
+        }
         try out_stream.print("asn: {?}, datacenter: {?}", .{ self.asn, self.datacenter });
+    }
+
+    pub fn free(self: *NodeData, allocator: std.mem.Allocator) void {
+        if (self.name != null) {
+            allocator.free(self.name.?);
+            self.name = null;
+        }
     }
 };
 
@@ -75,6 +91,19 @@ pub const Node = struct {
         }
         if (self.right) |right| {
             try right.printNode(out_stream, indentation, "└── ");
+        }
+    }
+
+    pub fn free(self: *Node, allocator: std.mem.Allocator) void {
+        print("Freeing node {any}: {any}\n", .{self.prefix, self.data});
+        if (self.left) |left| {
+            left.free(allocator);
+        }
+        if (self.right) |right| {
+            right.free(allocator);
+        }
+        if (self.data) |_| {
+            self.data.?.free(allocator);
         }
     }
 
@@ -168,6 +197,51 @@ test "Integrity check" {
     try root_node.assert_integrity();
     try left_node.assert_integrity();
     try right_node.assert_integrity();
+}
+
+test "Allocation safety" {
+    const allocator = std.testing.allocator;
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 0);
+    var root_node = Node{
+        .prefix = pfx,
+        .parent = null,
+        .left = null,
+        .right = null,
+        .data = .{
+            .asn = 0,
+            .datacenter = true,
+            .name = try allocator.dupe(u8, "root"),
+        },
+    };
+    var left_node = Node{
+        .prefix = pfx,
+        .parent = &root_node,
+        .left = null,
+        .right = null,
+        .data = .{
+            .asn = 1,
+            .datacenter = false,
+            .name = try allocator.dupe(u8, "left"),
+        },
+    };
+    var right_node = Node{
+        .prefix = pfx,
+        .parent = &root_node,
+        .left = null,
+        .right = null,
+        .data = .{
+            .asn = 2,
+            .datacenter = true,
+            .name = try allocator.dupe(u8, "right"),
+        },
+    };
+    root_node.left = &left_node;
+    root_node.right = &right_node;
+    // Act & assert
+    try root_node.assert_integrity();
+    try left_node.assert_integrity();  
+    try right_node.assert_integrity();
+    defer root_node.free(allocator);
 }
 
 test "Node merge" {

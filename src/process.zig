@@ -112,9 +112,7 @@ pub fn exec(cwd: ?[]const u8, argv: []const []const u8, allocator: Allocator) !C
     // Wait for the child process to finish closing down the pipes
     // and to free the resources
     return child.wait() catch |err| {
-        std.debug.print("Waiting command failed:\n", .{});
         printCmd(cwd, argv);
-        std.debug.print("Error: {}\n", .{err});
         return err;
     };
 }

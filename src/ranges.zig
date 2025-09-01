@@ -10,6 +10,8 @@ const Address = net.Address;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
+const utils = @import("utils.zig");
+const ip_fmt = utils.ip_fmt;
 
 const Errors = error{
     InvalidFamily,
@@ -18,7 +20,7 @@ const Errors = error{
 };
 
 pub const NetworkAndCidr = struct {
-    network: net.Ip4Address,
+    network: net.Address,
     cidr: u8,
 
     pub fn format(
@@ -29,8 +31,9 @@ pub const NetworkAndCidr = struct {
     ) !void {
         if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
         _ = options;
-
-        try out_stream.print("{}/{d}", .{ self.network, self.cidr });
+        try ip_fmt(self.network, out_stream);
+        try out_stream.print("/", .{});
+        try out_stream.print("{d}", .{self.cidr});
     }
 };
 
@@ -60,16 +63,8 @@ fn ip4(str: []const u8) !Ip4Address {
     const ip = try Ip4Address.parse(str, 0);
     return ip;
 }
-
-fn ip4str(alloc: Allocator, ip: Ip4Address) ![]const u8 {
-    // Convert the IP address to a string representatio
-    const str = try std.fmt.allocPrint(alloc, "{}", .{ip});
-    // Remove the trailing :0
-    return str[0 .. str.len - 2];
-}
-
-pub fn GetCIDRsInRange(alloc: Allocator, start_ip: Ip4Address, end_ip: Ip4Address) !ArrayList(NetworkAndCidr) {
-    var results = std.ArrayList(NetworkAndCidr).init(alloc);
+pub fn GetCIDRsInRange(allocator: Allocator, start_ip: Ip4Address, end_ip: Ip4Address) !ArrayList(NetworkAndCidr) {
+    var results = std.ArrayList(NetworkAndCidr).init(allocator);
     // Get the IPs in 32-bit unsigned integers (big-endian)
     var start_ipn = ipv4AsNumber(start_ip);
     const end_ipn = ipv4AsNumber(end_ip);
@@ -121,13 +116,16 @@ pub fn GetCIDRsInRange(alloc: Allocator, start_ip: Ip4Address, end_ip: Ip4Addres
         const ip_n = mem.readInt(u32, mem.asBytes(&bytes), .little);
 
         // Append the network and CIDR to the results array
-        try results.append(.{
-            .network = Ip4Address{
+        const addr: Address = .{
+            .in = Ip4Address{
                 .sa = .{
                     .port = 0,
                     .addr = ip_n,
                 },
             },
+        };
+        try results.append(.{
+            .network = addr,
             .cidr = prefix_len,
         });
 
@@ -150,7 +148,7 @@ const expectedResult = struct {
 };
 
 test "Single CIDR block IPv4 ranges" {
-    const alloc = std.heap.page_allocator;
+    const alloc = std.testing.allocator;
     const test_cases = [_]testCase{
         .{ .start = try ip4("10.10.10.0"), .end = try ip4("10.10.10.255"), .exp_net = "10.10.10.0", .exp_cidr = 24 },
         .{ .start = try ip4("10.10.10.128"), .end = try ip4("10.10.10.255"), .exp_net = "10.10.10.128", .exp_cidr = 25 },
@@ -187,18 +185,20 @@ test "Single CIDR block IPv4 ranges" {
     for (test_cases) |case| {
         const result = try GetCIDRsInRange(alloc, case.start, case.end);
         defer result.deinit();
+        var buffer: [256]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buffer);
+        const writer = stream.writer();
+        try ip_fmt(result.items[0].network, writer);
 
-        const actualNet = try ip4str(alloc, result.items[0].network);
-        defer alloc.free(actualNet);
         try expectEqual(1, result.items.len);
-        try expectEqualStrings(case.exp_net, actualNet);
+        try expectEqualStrings(case.exp_net, buffer[0..stream.pos]);
         try expectEqual(case.exp_cidr, result.items[0].cidr);
     }
 }
 
 test "Multiple CIDR block IPv4 ranges" {
     // Arrange
-    const alloc = std.heap.page_allocator;
+    const alloc = std.testing.allocator;
     const start = try ip4("51.10.0.0");
     const end = try ip4("51.24.255.255");
     const expected = [_]expectedResult{
@@ -219,9 +219,11 @@ test "Multiple CIDR block IPv4 ranges" {
     try expectEqual(4, result.items.len);
 
     for (expected, 0..) |value, i| {
-        const actual = try ip4str(alloc, result.items[i].network);
-        defer alloc.free(actual);
-        try expectEqualStrings(value.network, actual);
+        var buffer: [256]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buffer);
+        const writer = stream.writer();
+        try ip_fmt(result.items[i].network, writer);
+        try expectEqualStrings(value.network, buffer[0..stream.pos]);
         try expectEqual(value.cidr, result.items[i].cidr);
     }
 }

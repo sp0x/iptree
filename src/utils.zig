@@ -6,6 +6,18 @@ const net = std.net;
 const mem = std.mem;
 const print = std.debug.print;
 
+pub fn trim_quotes(s: []const u8) []const u8 {
+    if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') {
+        return s[1 .. s.len - 1];
+    }
+    if (s.len >= 1 and s[0] == '"') {
+        return s[1..];
+    }
+    if (s.len >= 1 and s[s.len - 1] == '"') {
+        return s[0 .. s.len - 1];
+    }
+    return s;
+}
 /// Formats an IP address into a human-readable string.
 /// This function takes a network address and writes the formatted IP address
 /// to the provided output stream. It supports both IPv4 and IPv6 addresses.
@@ -42,6 +54,11 @@ pub fn days_since_modification(dataset_dir: fs.Dir, descriptor: []const u8) !u64
     std.debug.assert(delta_ms >= 0);
     const days = @divTrunc(delta_ms, std.time.ns_per_day);
     return @bitCast(math.lossyCast(i64, days));
+}
+
+pub fn ipv4_to_u32(addr: std.net.Address) u32 {
+    const bytes = std.mem.asBytes(&addr.in.sa.addr);
+    return std.mem.readInt(u32, bytes, .big);
 }
 
 pub fn assert(ok: bool, comptime message: []const u8, args: anytype) void {

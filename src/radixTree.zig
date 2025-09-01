@@ -154,7 +154,6 @@ pub const RadixTree = struct {
         }
         if (newPrefixNetworkBits == differingBitIndex) {
             const tmpMask: u8 = newPrefixNetworkBits & 0x07;
-            print("New node: {d} {d}\n", .{ newPrefixNetworkBits, differingBitIndex });
             if (newPrefixNetworkBits < maxBits and cmp_bits(testAddressBytes[newPrefixNetworkBits >> 3], math.shr(u8, 0x80, tmpMask))) {
                 newNode.right = currentNode;
             } else {
@@ -313,12 +312,18 @@ pub const RadixTree = struct {
     }
 
     pub fn destroyNode(self: *RadixTree, node: *Node) void {
+        print("Destroying radix node {any}\n", .{node});
         if (node.left) |left| {
+            print("Destroying left node {any}\n", .{left});
             self.destroyNode(left);
         }
         if (node.right) |right| {
+            print("Destroying right node {any}\n", .{right});
             self.destroyNode(right);
         }
+        // Free up the data in the node first
+        node.free(self.allocator);
+        // Then free the node itself
         self.allocator.destroy(node);
     }
 
@@ -504,7 +509,7 @@ test "building a tree with a thousand nodes" {
         if (i % 2 == 0) {
             node.data = .{ .asn = @intCast(i) };
         } else {
-            node.data = .{ .datacenter = true };
+            node.data = .{ .datacenter = true, .name = try allocator.dupe(u8, "Test Datacenter") };
         }
     }
     // We should have more than 1000 nodes, because of the way the tree works.

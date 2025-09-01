@@ -71,7 +71,6 @@ pub const ASNSource = struct {
         while (line_iterator.next()) |line| {
             // Skip empty lines
             if (line.len == 0) {
-                print("Skipping empty line\n", .{});
                 continue;
             } // Parse the line and add it to the tree
             parse_line(line, tree) catch |err| {
@@ -134,9 +133,10 @@ pub const ASNSource = struct {
 };
 
 test "asn source construction" {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.testing.allocator;
     const asn_source = ASNSource{ .base_dir = "/tmp" };
     const tree = RadixTree.init(allocator);
+    defer tree.free();
     try asn_source.base.load(&asn_source.base, &tree, allocator);
     try asn_source.base.fetch(&asn_source.base);
     // Add more tests as needed

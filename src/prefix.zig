@@ -4,10 +4,11 @@ const Address = std.net.Address;
 const posix = std.posix;
 const math = std.math;
 const ranges = @import("ranges.zig");
+const utils = @import("utils.zig");
 
 /// Represents a network address with it's CIDR mask
 pub const Prefix = struct {
-    family: u8 = posix.AF.INET,
+    family: u16 = posix.AF.INET,
     networkBits: u8 = 0,
     address: Address,
 
@@ -34,6 +35,20 @@ pub const Prefix = struct {
         return try Prefix.fromIpAndMask(addr, mask);
     }
 
+    pub fn from_ipv4(addr: std.net.Address, mask: u8) Prefix {
+        var maxMaskValue: u8 = 32;
+        if (addr.any.family == posix.AF.INET6) {
+            maxMaskValue = 128;
+        }
+        var targetMaskValue = mask;
+        if (mask > maxMaskValue) {
+            targetMaskValue = maxMaskValue;
+        }
+        const ipx = sanitizeMask(addr, mask, maxMaskValue);
+
+        return Prefix{ .family = addr.any.family, .networkBits = targetMaskValue, .address = ipx };
+    }
+
     // Create a new prefix using an address, byte array for the IP address and a network mask
     pub fn fromIpAndMask(addr: []const u8, mask: u8) !Prefix {
         const family = ranges.GetFamily(addr);
@@ -50,11 +65,6 @@ pub const Prefix = struct {
         }
 
         return Prefix{ .family = family, .networkBits = targetMaskValue, .address = ipAddress };
-    }
-
-    pub fn asNumber(self: *const Prefix) u32 {
-        const bytes = std.mem.asBytes(&self.address.in.sa.addr);
-        return std.mem.readInt(u32, bytes, .big);
     }
 
     pub fn asBytes(self: *const Prefix) []const u8 {
@@ -161,7 +171,7 @@ test "empty prefix construction" {
 test "prefixes should be sanitized correctly" {
     const prefix = try Prefix.fromIpAndMask("192.168.0.0", 24);
     const prefix2 = try Prefix.fromIpAndMask("192.168.0.1", 24);
-    try expect(prefix.asNumber() == prefix2.asNumber());
+    try expect(utils.ipv4_to_u32(prefix.address) == utils.ipv4_to_u32(prefix2.address));
 }
 
 test "prefixes should be able to be subsets" {

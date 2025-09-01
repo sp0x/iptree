@@ -8,6 +8,7 @@ const RadixTree = @import("radixTree.zig").RadixTree;
 const iptree = @import("ipTree.zig");
 const NodeData = @import("node.zig").NodeData;
 const ASNSource = @import("datasources/asn.zig").ASNSource;
+const UdgerSource = @import("datasources/udger.zig").UdgerSource;
 const Datasource = @import("datasources/datasource.zig").Datasource;
 
 pub fn main() !void {
@@ -18,10 +19,8 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const arena_allocator = arena.allocator();
 
     defer {
         const deinit_status = gpa.deinit();
@@ -29,10 +28,12 @@ pub fn main() !void {
         if (deinit_status == .leak) expect(false) catch @panic("TEST FAIL");
     }
 
-    var dst_tree = iptree.new(arena_allocator);
-    var asn = ASNSource{ .base_dir = "data" };
+    var dst_tree = iptree.new(arena.allocator());
+    var src_asn = ASNSource{ .base_dir = "data" };
+    var src_udger = UdgerSource{ .base_dir = "data" };
     const sources = [_]Datasource{
-        asn.datasource(),
+        src_asn.datasource(),
+        src_udger.datasource(),
         // Here we'll just add the other sources
     };
     // Go over the dataousrces and if needed fetch them
@@ -47,7 +48,7 @@ pub fn main() !void {
     while (arg_iter.next()) |arg| {
         i += 1;
         if (i == 1) continue; // skip arg 0 which is the program
-        const sr_result = dst_tree.searchBest(arg, 32) catch |err| {
+        const sr_result = dst_tree.search_best(arg, 32) catch |err| {
             try stdout.print("Search failed: {}\n", .{err});
             return err;
         };

@@ -13,18 +13,24 @@ pub const IpTree = struct {
 
     pub fn insert(self: *IpTree, addr: []const u8, mask: u8, value: ?NodeData) !void {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
-        var tree = try self.pickTree(prefix.family);
+        var tree = try self.pick_tree(prefix.family);
         const node = try tree.insert(prefix);
         node.*.data = value;
     }
 
-    pub fn searchBest(self: *IpTree, addr: []const u8, mask: u8) !?SearchResult {
+    pub fn insert_prefix(self: *IpTree, prefix: Prefix, value: ?NodeData) !void {
+        var tree = try self.pick_tree(prefix.family);
+        const node = try tree.insert(prefix);
+        node.*.data = value;
+    }
+
+    pub fn search_best(self: *IpTree, addr: []const u8, mask: u8) !?SearchResult {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
-        const tree = try self.pickTree(prefix.family);
+        const tree = try self.pick_tree(prefix.family);
         return tree.SearchBest(prefix);
     }
 
-    fn pickTree(self: *IpTree, family: u8) !*RadixTree {
+    fn pick_tree(self: *IpTree, family: u16) !*RadixTree {
         return switch (family) {
             posix.AF.INET => return &self.ipv4,
             posix.AF.INET6 => return &self.ipv6,
