@@ -13,9 +13,7 @@ pub const IpTree = struct {
 
     pub fn insert(self: *IpTree, addr: []const u8, mask: u8, value: ?NodeData) !void {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
-        var tree = try self.pick_tree(prefix.family);
-        const node = try tree.insert(prefix);
-        node.*.data = value;
+        try self.insert_prefix(prefix, value);
     }
 
     pub fn insert_prefix(self: *IpTree, prefix: Prefix, value: ?NodeData) !void {

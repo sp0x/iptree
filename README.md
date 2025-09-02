@@ -10,3 +10,9 @@ This project is an implementation of a radix tree used to store IP address range
 # Run all tests
 zig build test
 ```
+
+## Installing
+
+```bash
+zig build -p ~/.local
+```

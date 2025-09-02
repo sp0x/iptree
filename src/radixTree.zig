@@ -142,6 +142,8 @@ pub const RadixTree = struct {
             .data = undefined,
         };
         self.numberOfNodes += 1;
+        resultingNode = newNode;
+
         if (currentNode.networkBits == differingBitIndex) {
             newNode.parent = currentNode;
             const tmpMask: u8 = currentNode.networkBits & 0x07;
@@ -204,6 +206,15 @@ pub const RadixTree = struct {
                 currentParent.?.right = glueNode;
             } else if (currentParent.?.left == currentNode) {
                 currentParent.?.left = glueNode;
+            } else {
+                // This should never happen
+                //
+                print("Current parent: {any}\n", .{currentParent});
+                print("Current node: {any}\n", .{currentNode});
+                print("Differing bit index: {d}\n", .{differingBitIndex});
+                print("Broken node: {any}\n", .{glueNode});
+                print("Broken node parent: {any}\n", .{glueNode.parent});
+                try glueNode.assert_integrity();
             }
 
             // Do assertions only in debug mode to avoid performance overhead in release builds.
@@ -312,13 +323,10 @@ pub const RadixTree = struct {
     }
 
     pub fn destroyNode(self: *RadixTree, node: *Node) void {
-        print("Destroying radix node {any}\n", .{node});
         if (node.left) |left| {
-            print("Destroying left node {any}\n", .{left});
             self.destroyNode(left);
         }
         if (node.right) |right| {
-            print("Destroying right node {any}\n", .{right});
             self.destroyNode(right);
         }
         // Free up the data in the node first
@@ -487,7 +495,12 @@ test "adding many nodes" {
 test "building a tree with a thousand nodes" {
     const allocator = std.testing.allocator;
     var tree = RadixTree.init(allocator);
-    defer tree.free();
+    defer {
+        tree.head.?.assert_integrity() catch {
+            std.debug.panic("Tree integrity check failed");
+        };
+        tree.free();
+    }
     var ip_n: u32 = 0;
     for (0..1000) |i| {
         ip_n += 256;

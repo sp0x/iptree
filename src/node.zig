@@ -94,15 +94,9 @@ pub const Node = struct {
         }
     }
 
+    /// Free the node's data if it exists. To free the node's children, call free on them directly or use a radix tree's free method instead.
     pub fn free(self: *Node, allocator: std.mem.Allocator) void {
-        print("Freeing node {any}: {any}\n", .{self.prefix, self.data});
-        if (self.left) |left| {
-            left.free(allocator);
-        }
-        if (self.right) |right| {
-            right.free(allocator);
-        }
-        if (self.data) |_| {
+        if (self.data != null) {
             self.data.?.free(allocator);
         }
     }
@@ -113,15 +107,15 @@ pub const Node = struct {
         // This node's parent has this node as a child.
         if (self.left != null) {
             // std.debug.print("Comparing left parent with self: {*} == {*}\n", .{ self.left.?.*.parent, self });
-            assert(self.left.?.*.parent == self, "Left child parent mismatch", .{});
+            assert(self.left.?.*.parent == self, "Left child does not have node as parent.", .{});
         }
         if (self.right != null) {
             // std.debug.print("Comparing right parent with self: {*} == {*}\n", .{ self.right.?.*.parent, self });
-            assert(self.right.?.*.parent == self, "Right child parent mismatch", .{});
+            assert(self.right.?.*.parent == self, "Right child does not have node as parent.", .{});
         }
 
         if (self.parent != null) {
-            assert(self.parent.?.*.left == self or self.parent.?.*.right == self, "Parent child mismatch", .{});
+            assert(self.parent.?.*.left == self or self.parent.?.*.right == self, "Current node's parent doesn't have the node as a child, even though node's parent is set.", .{});
         }
         // assert we dont have recursive parent
         var current = self.parent;
@@ -239,9 +233,11 @@ test "Allocation safety" {
     root_node.right = &right_node;
     // Act & assert
     try root_node.assert_integrity();
-    try left_node.assert_integrity();  
+    try left_node.assert_integrity();
     try right_node.assert_integrity();
     defer root_node.free(allocator);
+    defer left_node.free(allocator);
+    defer right_node.free(allocator);
 }
 
 test "Node merge" {
