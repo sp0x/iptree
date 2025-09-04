@@ -48,11 +48,11 @@ pub fn ip_fmt(addr: std.net.Address, out_stream: anytype) !void {
 
 pub fn days_since_modification(dataset_dir: fs.Dir, descriptor: []const u8) !u64 {
     const modification_tsec = try last_modified(dataset_dir, descriptor);
-    const now = std.time.timestamp();
-    const delta_ms: i128 = now - modification_tsec;
+    const now_sec = std.time.timestamp();
+    const delta_sec: i128 = now_sec - modification_tsec;
     // The modification date MUST be in the past
-    std.debug.assert(delta_ms >= 0);
-    const days = @divTrunc(delta_ms, std.time.ns_per_day);
+    std.debug.assert(delta_sec >= 0);
+    const days = @divTrunc(delta_sec, std.time.s_per_day);
     return @bitCast(math.lossyCast(i64, days));
 }
 
@@ -72,6 +72,7 @@ pub fn assert(ok: bool, comptime message: []const u8, args: anytype) void {
     }
 }
 
+/// Gets the last modified time **in seconds** of a file descriptor.
 pub fn last_modified(dataset_dir: fs.Dir, descriptor: []const u8) !i64 {
     const ipv4_data_file = try dataset_dir.openFile(descriptor, .{ .mode = .read_only });
     defer ipv4_data_file.close();

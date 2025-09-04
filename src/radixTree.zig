@@ -152,10 +152,6 @@ pub const RadixTree = struct {
         new_node.* = Node{
             .networkBits = prefix.networkBits,
             .prefix = prefix,
-            .parent = null,
-            .left = null,
-            .right = null,
-            .data = undefined,
         };
         self.numberOfNodes += 1;
         resulting_node = new_node;
