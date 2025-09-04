@@ -61,10 +61,10 @@ pub const NodeData = struct {
 
 pub const Node = struct {
     prefix: Prefix,
-    parent: ?*Node,
-    left: ?*Node,
-    right: ?*Node,
-    data: ?NodeData,
+    parent: ?*Node = null,
+    left: ?*Node = null,
+    right: ?*Node = null,
+    data: ?NodeData = null,
     networkBits: u8 = 0,
 
     pub fn format(
@@ -76,6 +76,66 @@ pub const Node = struct {
         if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
         _ = options;
         try self.printNode(out_stream, "", "");
+    }
+
+    /// Injects an overwrite instead of the current node. After this you may want to assign the current node to the left or the right side of the overwrite.
+    /// Note: this detaches the current node **fully**, meaning all parent, left and right sides are removed.
+    pub fn swap(self: *Node, overwrite: *Node) void {
+        overwrite.parent = self.parent;
+
+        if (self.parent) |p| {
+            if (p.left == self) {
+                p.left = overwrite;
+            } else if (p.right == self) {
+                p.right = overwrite;
+            } else {
+                unreachable("Parent not linked to child");
+            }
+        }
+
+        // Set the overwrite's children ?
+        overwrite.left = self.left;
+        overwrite.right = self.right;
+        //
+
+        if (self.left) |l| l.parent = overwrite;
+        if (self.right) |r| r.parent = overwrite;
+
+        self.detach();
+    }
+    /// Sets the *self* node as a child of the 'super' node, managing the current parent assignment.
+    /// The left and right side of *self* are not modified.
+    pub fn set_super(self: *Node, super: *Node) void {
+        super.parent = self.parent;
+
+        if (self.parent) |p| {
+            if (p.left == self) {
+                p.left = super;
+            } else if (p.right == self) {
+                p.right = super;
+            } else {
+                unreachable("Parent not linked to child");
+            }
+        }
+
+        // Make the super node our parent.
+        self.parent = super;
+    }
+
+    pub fn detach(self: *Node) void {
+        self.parent = null;
+        self.left = null;
+        self.right = null;
+    }
+
+    pub fn set_left(self: *Node, left: *Node) void {
+        self.left = left;
+        left.parent = self;
+    }
+
+    pub fn set_right(self: *Node, right: *Node) void {
+        self.right = right;
+        right.parent = self;
     }
 
     fn printNode(self: *const Node, out_stream: anytype, indent: []const u8, pfx: []const u8) !void {
@@ -105,6 +165,10 @@ pub const Node = struct {
         // Assert that:
         // Child nodes have this node as a parent.
         // This node's parent has this node as a child.
+        // The prefix is valid
+
+        assert(self.prefix.is_valid(), "Invalid prefix found: {any}", .{self.prefix});
+
         if (self.left != null) {
             // std.debug.print("Comparing left parent with self: {*} == {*}\n", .{ self.left.?.*.parent, self });
             assert(self.left.?.*.parent == self, "Left child does not have node as parent.", .{});
@@ -129,9 +193,6 @@ pub const Node = struct {
 pub fn New(data: NodeData, prefix: Prefix) Node {
     return Node{
         .prefix = prefix,
-        .parent = null,
-        .left = null,
-        .right = null,
         .data = data,
     };
 }
@@ -149,6 +210,136 @@ test "Node" {
         },
     };
     try expect(node.data != null);
+}
+
+test "swapping simple" {
+    const allocator = std.testing.allocator;
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 32);
+    const pfx2 = try Prefix.fromIpAndMask("1.1.1.2", 32);
+    var n1: Node = Node{ .prefix = pfx };
+    var n2: Node = Node{ .prefix = pfx2 };
+    defer n1.free(allocator);
+    defer n2.free(allocator);
+    n1.swap(&n2);
+
+    assert(&n1 != n2.parent, "N2 should remain without a parent", .{});
+    assert(n2.parent == null, "Swap shouldn't set parent in target node", .{});
+}
+
+test "swapping advanced" {
+    // Arrange
+    const allocator = std.testing.allocator;
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 32);
+    const pfx2 = try Prefix.fromIpAndMask("1.1.1.2", 32);
+    const pfx3 = try Prefix.fromIpAndMask("1.1.1.3", 32);
+    const pfx4 = try Prefix.fromIpAndMask("1.1.1.4", 32);
+    const pfx5 = try Prefix.fromIpAndMask("1.1.1.5", 32);
+    const pfxswap = try Prefix.fromIpAndMask("1.1.1.9", 32);
+    var n1: Node = .{ .prefix = pfx };
+    var n2: Node = .{ .prefix = pfx2 };
+    var n3: Node = .{ .prefix = pfx3 };
+    var n4: Node = .{ .prefix = pfx4 };
+    var n5: Node = .{ .prefix = pfx5 };
+    var nswap: Node = .{ .prefix = pfxswap };
+    defer n1.free(allocator);
+    defer n2.free(allocator);
+    defer n3.free(allocator);
+    defer n4.free(allocator);
+
+    n1.set_left(&n2);
+    n1.set_right(&n3);
+    n3.set_left(&n4);
+    n3.set_right(&n5);
+    //   n1
+    // n2   n3 <-- We swap here, changing n3 with nswap
+    //    n4    n5
+    // Act
+    n3.swap(&nswap);
+    // Assert
+    assert(n1.right == &nswap, "Swapping should change parent, child CORRECT side", .{});
+    assert(n1.left == &n2, "No other changes on parent", .{});
+    assert(n4.parent == &nswap, "Child's parent should change after swapping the parent", .{});
+    assert(n5.parent == &nswap, "Child's parent should change after swapping the parent", .{});
+    assert(n3.parent == null, "Swapping detaches the target node.", .{});
+    assert(n3.left == null, "Swapping detaches the target node.", .{});
+    assert(n3.right == null, "Swapping detaches the target node.", .{});
+    try n1.assert_integrity();
+}
+
+test "swapping root" {
+    // Arrange
+    const allocator = std.testing.allocator;
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 32);
+    const pfx2 = try Prefix.fromIpAndMask("1.1.1.2", 32);
+    const pfx3 = try Prefix.fromIpAndMask("1.1.1.3", 32);
+    const pfx4 = try Prefix.fromIpAndMask("1.1.1.4", 32);
+    const pfx5 = try Prefix.fromIpAndMask("1.1.1.5", 32);
+    const pfxswap = try Prefix.fromIpAndMask("1.1.1.9", 32);
+    var n1: Node = .{ .prefix = pfx };
+    var n2: Node = .{ .prefix = pfx2 };
+    var n3: Node = .{ .prefix = pfx3 };
+    var n4: Node = .{ .prefix = pfx4 };
+    var n5: Node = .{ .prefix = pfx5 };
+    var nswap: Node = .{ .prefix = pfxswap };
+    defer n1.free(allocator);
+    defer n2.free(allocator);
+    defer n3.free(allocator);
+    defer n4.free(allocator);
+
+    n1.set_left(&n2);
+    n1.set_right(&n3);
+    n3.set_left(&n4);
+    n3.set_right(&n5);
+    //   n1 <-- We swap here, at the root
+    // n2   n3
+    //    n4    n5
+    // Act
+    n1.swap(&nswap);
+    // Assert
+    assert(nswap.right == &n3, "Swapping should change parent, child CORRECT side", .{});
+    assert(nswap.left == &n2, "No other changes on parent", .{});
+    assert(n4.parent == &n3, "Child's parent should change after swapping the parent", .{});
+    assert(n5.parent == &n3, "Child's parent should change after swapping the parent", .{});
+    assert(n1.parent == null, "Swapping detaches the target node.", .{});
+    assert(n1.left == null, "Swapping detaches the target node.", .{});
+    assert(n1.right == null, "Swapping detaches the target node.", .{});
+    try nswap.assert_integrity();
+    try n1.assert_integrity();
+}
+
+test "super" {
+    const allocator = std.testing.allocator;
+    const pfx = try Prefix.fromIpAndMask("1.1.1.1", 32);
+    const pfx2 = try Prefix.fromIpAndMask("1.1.1.2", 32);
+    const pfx3 = try Prefix.fromIpAndMask("1.1.1.3", 32);
+    const pfx4 = try Prefix.fromIpAndMask("1.1.1.4", 32);
+    const pfx5 = try Prefix.fromIpAndMask("1.1.1.5", 32);
+    const pfxsuper = try Prefix.fromIpAndMask("1.1.1.9", 32);
+    var n1: Node = .{ .prefix = pfx };
+    var n2: Node = .{ .prefix = pfx2 };
+    var n3: Node = .{ .prefix = pfx3 };
+    var n4: Node = .{ .prefix = pfx4 };
+    var n5: Node = .{ .prefix = pfx5 };
+    var nsuper: Node = .{ .prefix = pfxsuper };
+    defer n1.free(allocator);
+    defer n2.free(allocator);
+    defer n3.free(allocator);
+    defer n4.free(allocator);
+
+    n1.set_left(&n2);
+    n1.set_right(&n3);
+    n3.set_left(&n4);
+    n3.set_right(&n5);
+    //   n1
+    // n2   n3 <-- we set the super here
+    //    n4    n5
+    // Act
+    n3.set_super(&nsuper);
+
+    assert(n3.parent == &nsuper, "Setting the super node should reassign parent-child nodes", .{});
+    assert(n1.right == &nsuper, "set_super should assign the node on the correct side.", .{});
+    assert(n3.left == &n4, "Left side should not change after set_super", .{});
+    assert(n3.right == &n5, "Right side should not change after set_super", .{});
 }
 
 test "Integrity check" {

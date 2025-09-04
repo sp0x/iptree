@@ -8,16 +8,25 @@ const utils = @import("utils.zig");
 
 /// Represents a network address with it's CIDR mask
 pub const Prefix = struct {
-    family: u16 = posix.AF.INET,
     networkBits: u8 = 0,
     address: Address,
 
-    pub fn isEmpty(self: *const Prefix) bool {
+    pub fn is_empty(self: *const Prefix) bool {
         return self.address.in.sa.addr == 0;
     }
 
+    pub fn is_valid(self: *const Prefix) bool {
+        return switch (self.address.any.family) {
+            posix.AF.INET => self.networkBits <= 32,
+            posix.AF.INET6 => self.networkBits <= 128,
+            else => {
+                std.debug.panic("Only IPv4 and IPv6 prefixes are supported. Found prefix: {any} family {d}", .{ self, self.address.any.family });
+            },
+        };
+    }
+
     pub fn empty() Prefix {
-        return Prefix{ .family = posix.AF.INET, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
+        return Prefix{ .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
     }
 
     pub fn fromCidr(cidr: []const u8) !Prefix {
@@ -46,7 +55,7 @@ pub const Prefix = struct {
         }
         const ipx = sanitizeMask(addr, mask, maxMaskValue);
 
-        return Prefix{ .family = addr.any.family, .networkBits = targetMaskValue, .address = ipx };
+        return Prefix{ .networkBits = targetMaskValue, .address = ipx };
     }
 
     // Create a new prefix using an address, byte array for the IP address and a network mask
@@ -64,7 +73,7 @@ pub const Prefix = struct {
             return error.OutOfBands;
         }
 
-        return Prefix{ .family = family, .networkBits = targetMaskValue, .address = ipAddress };
+        return Prefix{ .networkBits = targetMaskValue, .address = ipAddress };
     }
 
     pub fn asBytes(self: *const Prefix) []const u8 {
@@ -84,12 +93,12 @@ pub const Prefix = struct {
     }
 
     pub fn isSupersetOf(self: *const Prefix, other: Prefix) bool {
-        if (other.family != self.family)
+        if (other.address.any.family != self.address.any.family)
             return false;
 
         const mask = self.networkBits / 8;
         const maskBits = self.networkBits % 8;
-        const isv4 = self.family == posix.AF.INET;
+        const isv4 = self.address.any.family == posix.AF.INET;
         const otherBytes = if (isv4) std.mem.asBytes(&other.address.in.sa.addr) else std.mem.asBytes(&other.address.in6.sa.addr);
         const selfBytes = if (isv4) std.mem.asBytes(&self.address.in.sa.addr) else std.mem.asBytes(&self.address.in6.sa.addr);
 
@@ -108,13 +117,13 @@ pub const Prefix = struct {
     }
 
     pub fn isSubsetOf(self: *const Prefix, other: Prefix) bool {
-        if (self.family != other.family) {
+        if (self.address.any.family != other.address.any.family) {
             return false;
         }
 
         const mask = other.networkBits / 8;
         const maskBits = other.networkBits % 8;
-        const isv4 = self.family == posix.AF.INET;
+        const isv4 = self.address.any.family == posix.AF.INET;
         const otherBytes = if (isv4) std.mem.asBytes(&other.address.in.sa.addr) else std.mem.asBytes(&other.address.in6.sa.addr);
         const selfBytes = if (isv4) std.mem.asBytes(&self.address.in.sa.addr) else std.mem.asBytes(&self.address.in6.sa.addr);
 
@@ -158,14 +167,14 @@ fn sanitizeMask(addr: Address, masklen: u8, maskbits: u8) Address {
 
 test "prefix from IP and mask" {
     const prefix = try Prefix.fromIpAndMask("192.168.0.0", 24);
-    try expect(prefix.family == posix.AF.INET);
+    try expect(prefix.address.any.family == posix.AF.INET);
     try expect(prefix.networkBits == 24);
     try expect(prefix.address.in.sa.addr == 43200);
 }
 
 test "empty prefix construction" {
-    const pfx: Prefix = Prefix{ .family = posix.AF.INET, .networkBits = 0, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
-    try expect(pfx.isEmpty());
+    const pfx: Prefix = Prefix{ .networkBits = 0, .address = Address{ .in = .{ .sa = .{ .addr = 0, .port = 0 } } } };
+    try expect(pfx.is_empty());
 }
 
 test "prefixes should be sanitized correctly" {

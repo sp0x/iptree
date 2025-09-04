@@ -35,7 +35,6 @@ fn parse_line(line: []const u8, allocator: std.mem.Allocator, tree: *IpTree) !vo
 
     for (cidrs.items) |cidr| {
         const pfx = Prefix.from_ipv4(cidr.network, cidr.cidr);
-        print("Inserting datacenter {s} for prefix {}/{}\n", .{ datacenter_name, cidr.network, cidr.cidr });
         try tree.insert_prefix(pfx, .{ .datacenter = true, .name = name });
         // print("Inserted datacenter {s} for prefix {}\n", .{ datacenter_name, cidr });
     }

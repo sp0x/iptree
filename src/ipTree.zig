@@ -17,14 +17,14 @@ pub const IpTree = struct {
     }
 
     pub fn insert_prefix(self: *IpTree, prefix: Prefix, value: ?NodeData) !void {
-        var tree = try self.pick_tree(prefix.family);
+        var tree = try self.pick_tree(prefix.address.any.family);
         const node = try tree.insert(prefix);
         node.*.data = value;
     }
 
     pub fn search_best(self: *IpTree, addr: []const u8, mask: u8) !?SearchResult {
         const prefix = try Prefix.fromIpAndMask(addr, mask);
-        const tree = try self.pick_tree(prefix.family);
+        const tree = try self.pick_tree(prefix.address.any.family);
         return tree.SearchBest(prefix);
     }
 
