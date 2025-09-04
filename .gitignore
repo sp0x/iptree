@@ -2,3 +2,10 @@
 zig-cache
 .zig-cache
 zig-out
+.git
+data
+# Secrets
+.secrets
+.env
+.env.*
+
