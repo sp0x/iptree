@@ -5,6 +5,7 @@ const math = std.math;
 const net = std.net;
 const mem = std.mem;
 const print = std.debug.print;
+const exec = @import("process.zig").exec;
 
 pub fn trim_quotes(s: []const u8) []const u8 {
     if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') {
@@ -61,6 +62,18 @@ pub fn ipv4_to_u32(addr: std.net.Address) u32 {
     return std.mem.readInt(u32, bytes, .big);
 }
 
+// Converts an IP address into bytes slice, e.g., IPv6 address 1000:0ac3:22a2:0000:0000:4b3c:0504:1234
+// is converted into [16 0 10 195 34 162 0 0 0 0 75 60 5 4 18 52].
+pub fn ip_to_bytes(address: *const std.net.Address) []const u8 {
+    return switch (address.any.family) {
+        std.posix.AF.INET => {
+            return std.mem.asBytes(&address.in.sa.addr);
+        },
+        std.posix.AF.INET6 => &address.in6.sa.addr,
+        else => unreachable,
+    };
+}
+
 pub fn assert(ok: bool, comptime message: []const u8, args: anytype) void {
     if (!ok) {
         // assertion failure
@@ -100,4 +113,17 @@ test "utils" {
     const expected_v6 = "2001:0db8:85a3:0000:0000:8a2e:0370:7334";
     try expect(mem.indexOf(u8, formatted, expected_v4) != null);
     try expect(mem.indexOf(u8, formatted, expected_v6) != null);
+}
+
+pub fn exec_fetch(script: []const u8, base_dir: []const u8) !void {
+    // Implement fetching logic if needed
+    const allocator = std.heap.page_allocator;
+    var build_args = std.ArrayList([]const u8).init(allocator);
+    defer build_args.deinit();
+    try build_args.appendSlice(&[_][]const u8{ script, base_dir });
+
+    const res = try exec(null, build_args.items, allocator);
+    if (res.Exited != 0) {
+        return error.NotImplemented; // Or handle the error as needed
+    }
 }

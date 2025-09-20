@@ -6,6 +6,73 @@ const math = std.math;
 const ranges = @import("ranges.zig");
 const utils = @import("utils.zig");
 
+// Represents IPv4 or IPv6 bytes.
+pub const IpBytes = union(enum) {
+    v4: [4]u8,
+    v6: [16]u8,
+
+    pub fn init(addr: std.net.Address) IpBytes {
+        return switch (addr.any.family) {
+            std.posix.AF.INET => .{
+                .v4 = std.mem.asBytes(&addr.in.sa.addr).*,
+            },
+            std.posix.AF.INET6 => .{
+                .v6 = addr.in6.sa.addr,
+            },
+            else => unreachable,
+        };
+    }
+
+    pub fn bitAt(self: IpBytes, index: usize) usize {
+        return switch (self) {
+            .v4 => |b| 1 & std.math.shr(usize, b[index >> 3], 7 - (index % 8)),
+            .v6 => |b| 1 & std.math.shr(usize, b[index >> 3], 7 - (index % 8)),
+        };
+    }
+
+    pub fn bitCount(self: IpBytes) usize {
+        return switch (self) {
+            .v4 => 32,
+            .v6 => 128,
+        };
+    }
+
+    pub fn isV4InV6(self: IpBytes) bool {
+        return switch (self) {
+            .v4 => false,
+            .v6 => |b| std.mem.allEqual(u8, b[0..12], 0),
+        };
+    }
+
+    pub fn network(self: IpBytes, prefix_len: usize) Prefix {
+        return switch (self) {
+            .v4 => |b| .{
+                .ip = std.net.Address.initIp4(b, 0),
+                .prefix_len = prefix_len,
+            },
+            .v6 => |b| {
+                // IPv4 in IPv6 form.
+                if (std.mem.allEqual(u8, b[0..12], 0)) {
+                    return .{
+                        .ip = std.net.Address.initIp4([4]u8{
+                            b[12],
+                            b[13],
+                            b[14],
+                            b[15],
+                        }, 0),
+                        .prefix_len = prefix_len - 96,
+                    };
+                }
+
+                return .{
+                    .ip = std.net.Address.initIp6(b, 0, 0, 0),
+                    .prefix_len = prefix_len,
+                };
+            },
+        };
+    }
+};
+
 /// Represents a network address with it's CIDR mask
 pub const Prefix = struct {
     networkBits: u8 = 0,
@@ -77,7 +144,7 @@ pub const Prefix = struct {
     }
 
     pub fn asBytes(self: *const Prefix) []const u8 {
-        return std.mem.asBytes(&self.address.in.sa.addr);
+        return utils.ip_to_bytes(&self.address);
     }
 
     pub fn format(

@@ -75,20 +75,6 @@ pub const UdgerSource = struct {
         std.debug.print("Udger data loaded successfully from {s}\n", .{ipv4_file_path});
     }
 
-    fn fetch_new_data(self: *UdgerSource) !void {
-        // Implement fetching logic if needed
-        const allocator = std.heap.page_allocator;
-        var build_args = std.ArrayList([]const u8).init(allocator);
-        defer build_args.deinit();
-        try build_args.appendSlice(&[_][]const u8{ FETCH_SCRIPT, self.base_dir });
-
-        const res = try exec(null, build_args.items, allocator);
-        if (res.Exited != 0) {
-            print("Failed to fetch datacenters data. Non-zero result: {d}\n", .{res.Exited});
-            return error.NotImplemented; // Or handle the error as needed
-        }
-    }
-
     pub fn fetch(self: *UdgerSource) !void {
         var dst_dir: fs.Dir = undefined;
         if (self.base_dir.len == 0) {
@@ -104,7 +90,7 @@ pub const UdgerSource = struct {
         const n_days = utils.days_since_modification(dst_dir, "datacenters.csv") catch |err| {
             if (err == error.FileNotFound) {
                 // If the file does not exist, we should fetch it
-                return self.fetch_new_data();
+                return utils.exec_fetch(FETCH_SCRIPT, self.base_dir);
             }
             print("Failed to get modification time for Udger data: {any}\n", .{err});
             return err; // Propagate the error
@@ -114,7 +100,7 @@ pub const UdgerSource = struct {
             return;
         }
 
-        try self.fetch_new_data();
+        try utils.exec_fetch(FETCH_SCRIPT, self.base_dir);
     }
 
     pub fn free(_: *UdgerSource) void {
