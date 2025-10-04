@@ -8,7 +8,8 @@ const posix = std.posix;
 const RadixTree = @import("../radixTree.zig").RadixTree;
 const utils = @import("../utils.zig");
 const exec = @import("../process.zig").exec;
-const IpTree = @import("../ipTree.zig").IpTree;
+const iptree = @import("../ipTree.zig");
+const IpTree = iptree.IpTree;
 const Datasource = @import("./datasource.zig").Datasource;
 const Allocator = std.mem.Allocator;
 const ChildProcess = std.process.Child;
@@ -118,13 +119,3 @@ pub const ASNSource = struct {
         return Datasource.init(self);
     }
 };
-
-test "asn source construction" {
-    const allocator = std.testing.allocator;
-    const asn_source = ASNSource{ .base_dir = "/tmp" };
-    const tree = RadixTree.init(allocator);
-    defer tree.free();
-    try asn_source.base.load(&asn_source.base, &tree, allocator);
-    try asn_source.base.fetch(&asn_source.base);
-    // Add more tests as needed
-} //

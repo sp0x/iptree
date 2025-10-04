@@ -5,12 +5,21 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const print = std.debug.print;
 const mem = std.mem;
+const Allocator = std.mem.Allocator;
+
+fn getPathFromFd(fd: std.fs.File.Handle) ![]u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    var buf_path: [std.fs.max_path_bytes]u8 = undefined;
+    const proc_path = try std.fmt.bufPrint(&buf, "/proc/self/fd/{}", .{fd});
+    return try std.fs.readLinkAbsolute(proc_path, &buf_path);
+}
 
 pub fn map(f: std.fs.File) ![]u8 {
     // TODO: We probably need CreateFileMapping, MapViewOfFile to support Windows,
     // see https://github.com/ziglang/zig/pull/21083.
 
-    const file_size = (try f.stat()).size;
+    const fstat = try f.stat();
+    const file_size = fstat.size;
     const page_size = std.heap.pageSize();
     const aligned_file_size = mem.alignForward(usize, file_size, page_size);
     const src = try posix.mmap(

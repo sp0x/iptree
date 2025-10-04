@@ -44,29 +44,29 @@ pub const IpBytes = union(enum) {
         };
     }
 
-    pub fn network(self: IpBytes, prefix_len: usize) Prefix {
+    pub fn network(self: IpBytes, prefix_len: u8) Prefix {
         return switch (self) {
             .v4 => |b| .{
-                .ip = std.net.Address.initIp4(b, 0),
-                .prefix_len = prefix_len,
+                .address = std.net.Address.initIp4(b, 0),
+                .networkBits = prefix_len,
             },
             .v6 => |b| {
                 // IPv4 in IPv6 form.
                 if (std.mem.allEqual(u8, b[0..12], 0)) {
                     return .{
-                        .ip = std.net.Address.initIp4([4]u8{
+                        .address = std.net.Address.initIp4([4]u8{
                             b[12],
                             b[13],
                             b[14],
                             b[15],
                         }, 0),
-                        .prefix_len = prefix_len - 96,
+                        .networkBits = prefix_len - 96,
                     };
                 }
 
                 return .{
-                    .ip = std.net.Address.initIp6(b, 0, 0, 0),
-                    .prefix_len = prefix_len,
+                    .address = std.net.Address.initIp6(b, 0, 0, 0),
+                    .networkBits = prefix_len,
                 };
             },
         };

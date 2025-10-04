@@ -27,6 +27,20 @@ pub const Country = struct {
         is_in_european_union: bool = false,
         iso_code: []const u8 = "",
         names: ?Names = null,
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+            _ = options;
+
+            const name = self.names orelse return;
+            const n_name = name.get("en") orelse "Unknown";
+            try writer.print("{s}", .{n_name});
+        }
     };
     pub const RepresentedCountry = struct {
         geoname_id: u32 = 0,
@@ -79,6 +93,20 @@ pub const City = struct {
     pub const City = struct {
         geoname_id: u32 = 0,
         names: ?Names = null,
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+            _ = options;
+
+            const name = self.names orelse return;
+            const n_name = name.get("en") orelse "Unknown";
+            try writer.print("{s}", .{n_name});
+        }
     };
     pub const Location = struct {
         accuracy_radius: u16 = 0,
@@ -86,6 +114,18 @@ pub const City = struct {
         longitude: f64 = 0,
         metro_code: u16 = 0,
         time_zone: []const u8 = "",
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+            _ = options;
+
+            try writer.print("({}, {})", .{ self.latitude, self.longitude });
+        }
     };
     pub const Postal = struct {
         code: []const u8 = "",
@@ -94,6 +134,20 @@ pub const City = struct {
         geoname_id: u32 = 0,
         iso_code: []const u8 = "",
         names: ?Names = null,
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+            _ = options;
+
+            const name = self.names orelse return;
+            const n_name = name.get("en") orelse "Unknown";
+            try writer.print("{s}", .{n_name});
+        }
     };
 
     pub fn init(allocator: std.mem.Allocator) Self {
@@ -115,6 +169,31 @@ pub const City = struct {
 
     pub fn deinit(self: *const Self) void {
         self._arena.deinit();
+    }
+
+    pub fn format(
+        self: @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        if (fmt.len != 0) std.fmt.invalidFmtError(fmt, self);
+        _ = options;
+
+        try writer.print("{}", .{self.location});
+        try writer.print("{}, ", .{self.city});
+
+        if (self.subdivisions) |subs| {
+            if (subs.items.len > 0) {
+                try writer.print("{}, ", .{subs.items[0]});
+            }
+        }
+        try writer.print(
+            "{}",
+            .{
+                self.country,
+            },
+        );
     }
 };
 

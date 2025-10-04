@@ -1,4 +1,7 @@
 const std = @import("std");
+const testing = std.testing;
+const expect = testing.expect;
+const net = std.net;
 const Allocator = std.mem.Allocator;
 const mmap = @import("../mmap.zig");
 const utils = @import("../utils.zig");
@@ -7,6 +10,7 @@ const Prefix = net_prefixes.Prefix;
 const IpBytes = net_prefixes.IpBytes;
 const decoder = @import("decoder.zig");
 const print = std.debug.print;
+const geoip2 = @import("geoip2.zig");
 
 pub const ReadError = error{ MetadataStartNotFound, InvalidTreeNode, CorruptedTree, AddressNotFound, UnknownRecordSize, DatabaseTooBig };
 
@@ -14,6 +18,7 @@ pub const ReadError = error{ MetadataStartNotFound, InvalidTreeNode, CorruptedTr
 /// In particular it has the format version, the build time as Unix epoch time,
 /// the database type and description, the IP version supported,
 /// and an array of the natural languages included.
+/// Documentation can be found here: https://maxmind.github.io/MaxMind-DB/#database-metadata.
 pub const Metadata = struct {
     binary_format_major_version: u16 = 0,
     binary_format_minor_version: u16 = 0,
@@ -45,12 +50,12 @@ const data_section_separator_size = 16;
 pub const Reader = struct {
     mapped_file: ?std.fs.File,
     src: []u8,
-    offset: usize,
+    data_section_offset: usize,
     ipv4_start: usize,
     metadata: Metadata,
 
     pub fn map(allocator: Allocator, path: []const u8) !Reader {
-        const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+        const file = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
             std.debug.print("Failed to open maxmind file {s}: {any}\n", .{ path, err });
             return err; // Propagate the error
         };
@@ -69,19 +74,18 @@ pub const Reader = struct {
         errdefer metadata.deinit();
 
         const search_tree_size: usize = metadata.node_count * metadata.record_size / 4;
-
+        // Search tree size is also: ( ( $record_size * 2 ) / 8 ) * $number_of_nodes
+        //
         var r = Reader{
             .mapped_file = file,
             .src = mmdb_buff,
-            .offset = search_tree_size + data_section_separator_size,
+            // The data section starts right after the search tree and the separator.
+            .data_section_offset = search_tree_size + data_section_separator_size,
             .ipv4_start = 0,
             .metadata = metadata,
         };
 
         r.ipv4_start = try r.findIPv4Start();
-
-        print("MMDB Metadata: {any}\n", .{metadata.node_count});
-        print("IPV4 start node: {d}\n", .{r.ipv4_start});
 
         return r;
     }
@@ -95,7 +99,7 @@ pub const Reader = struct {
         const record_offset = try self.resolveDataPointer(pointer);
 
         var d = decoder.Decoder{
-            .src = self.src[self.offset..],
+            .src = self.src[self.data_section_offset..],
             .offset = record_offset,
         };
 
@@ -128,7 +132,8 @@ pub const Reader = struct {
         return try self.resolveDataPointerAndDecode(allocator, T, pointer);
     }
 
-    // Iterates over blocks of IP networks.
+    /// Given a network in CIDR format, returns an iterator over all the records in this network and it's sub-networks.
+    /// Note, this can be very expensive if the network is large, e.g., `::/0`
     pub fn within(
         self: *Reader,
         allocator: std.mem.Allocator,
@@ -136,7 +141,7 @@ pub const Reader = struct {
         network: Prefix,
     ) !Iterator(T) {
         const ip_bytes = IpBytes.init(network.address);
-        const prefix_len: usize = network.prefix_len;
+        const prefix_len: u8 = network.networkBits;
         const bit_count: usize = ip_bytes.bitCount();
 
         var node = self.startNode(bit_count);
@@ -178,6 +183,8 @@ pub const Reader = struct {
         };
     }
 
+    // Traverses the search tree to find the node that matches the given IP address.
+    // Returns the data pointer and the prefix length of the matched node.
     fn findAddressInTree(self: *Reader, ip_address: []const u8) !struct { usize, usize } {
         const bit_count: usize = ip_address.len * 8;
         var node = self.startNode(bit_count);
@@ -191,22 +198,28 @@ pub const Reader = struct {
                 break;
             }
 
-            const bit = 1 & std.math.shr(usize, ip_address[i >> 3], 7 - (i % 8));
+            // The leftmost bit corresponds to the first node in the search tree. For each bit, a value of 0 means we choose the left record in a node, and a value of 1 means we choose the right record.
+            const shift_amt = 7 - (i % 8);
+            const bit = 1 & std.math.shr(usize, ip_address[i >> 3], shift_amt);
 
             node = try self.readNode(node, bit);
         }
-
+        // We don't have data for this IP address
         if (node == node_count) {
             return .{ 0, prefix_len };
         }
-
+        // We found a data pointer, relative to the start of the data section.
         if (node > node_count) {
             return .{ node, prefix_len };
         }
 
+        // If the node that we found is less than the node_count then this is an actual node number, in that case we find that node and continue
+
         return ReadError.InvalidTreeNode;
     }
 
+    /// Returns the node start index depending on Ipv4 or Ipv6.
+    /// Ipv6 starts from 0 and Ipv4 starts from the node found by findIPv4Start.
     fn startNode(self: *Reader, length: usize) usize {
         return if (length == 128) 0 else self.ipv4_start;
     }
@@ -245,28 +258,29 @@ pub const Reader = struct {
         return node;
     }
 
-    fn readNode(self: *Reader, node_number: usize, index: usize) !usize {
+    /// Reads the value of a node based on the node number and a bit(0-left or 1-right),
+    fn readNode(self: *Reader, node_number: usize, left_or_right: usize) !usize {
         const src = self.src;
         const base_offset: usize = node_number * self.metadata.record_size / 4;
 
         return switch (self.metadata.record_size) {
             24 => {
-                const offset = base_offset + index * 3;
+                const offset = base_offset + left_or_right * 3;
                 return decoder.toUsize(src[offset .. offset + 3], 0);
             },
             28 => {
                 var middle = src[base_offset + 3];
-                if (index != 0) {
+                if (left_or_right != 0) { // We go right
                     middle &= 0x0F;
-                } else {
+                } else { // We go left
                     middle = (0xF0 & middle) >> 4;
                 }
 
-                const offset = base_offset + index * 4;
+                const offset = base_offset + left_or_right * 4;
                 return decoder.toUsize(src[offset .. offset + 3], middle);
             },
             32 => {
-                const offset = base_offset + index * 4;
+                const offset = base_offset + left_or_right * 4;
                 return decoder.toUsize(src[offset .. offset + 4], 0);
             },
             else => ReadError.UnknownRecordSize,
@@ -276,7 +290,7 @@ pub const Reader = struct {
 
 const WithinNode = struct {
     ip_bytes: IpBytes,
-    prefix_len: usize,
+    prefix_len: u8,
     node: usize,
 };
 
@@ -292,6 +306,18 @@ fn Iterator(comptime T: type) type {
         pub const Item = struct {
             net: Prefix,
             record: T,
+
+            pub fn format(
+                self: @This(),
+                comptime fmt: []const u8,
+                options: std.fmt.FormatOptions,
+                writer: anytype,
+            ) !void {
+                _ = fmt;
+                _ = options;
+
+                try writer.print("Net: {}, Record: {any}", .{ self.net, self.record });
+            }
         };
 
         pub fn next(self: *Self) !?Item {
@@ -371,4 +397,61 @@ fn findMetadataStart(src: []const u8) !usize {
     metadata_start += metadata_start_marker.len;
 
     return metadata_start;
+}
+
+test "findMetadataStart works" {
+    const data = "random data here\xAB\xCD\xEFMaxMind.commetadata starts here";
+    const start = findMetadataStart(data) catch unreachable;
+    try std.testing.expectEqual(data.len - "metadata starts here".len, start);
+}
+
+test "Reader.map works" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var reader = try Reader.map(allocator, "testdata/GeoIP2-City-Test.mmdb");
+    defer reader.close(allocator);
+    // `2.125.160.216` (IPv4): Should return a result for London, UK.
+    // `89.160.20.128` (IPv4): Should return a result for Linköping, Sweden.
+    // `::2:2` (IPv6): Should return a result for Linköping, Sweden.
+    try expect(reader.metadata.binary_format_major_version == 2);
+    try testing.expect(reader.metadata.binary_format_minor_version == 0);
+    try testing.expect(reader.metadata.ip_version == 6);
+    try testing.expect(reader.metadata.record_size == 28);
+    try testing.expect(reader.metadata.node_count == 1547);
+    try testing.expect(reader.metadata.languages.?.items.len == 2);
+    const langs = reader.metadata.languages.?;
+    try testing.expect(std.mem.eql(u8, langs.items[0], "en"));
+    try testing.expect(std.mem.eql(u8, langs.items[1], "zh"));
+
+    // Lookup an IPv4 address.
+    var addr = try net.Address.parseIp4("2.125.160.216", 0);
+    const city_record = try reader.lookup(allocator, geoip2.City, &addr);
+    defer city_record.deinit();
+    const city = city_record.city.names orelse unreachable;
+    try testing.expect(std.mem.eql(u8, city.get("en") orelse unreachable, "Boxford"));
+}
+
+test "Reader.within works" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var reader = try Reader.map(allocator, "testdata/GeoIP2-City-Test.mmdb");
+    defer reader.close(allocator);
+
+    const pfx = Prefix.from_ipv4(try net.Address.parseIp4("0.0.0.0", 0), 0);
+    var iter = try reader.within(allocator, geoip2.City, pfx);
+    defer iter.deinit();
+
+    var count: usize = 0;
+    while (true) {
+        const item = try iter.next() orelse break;
+        count += 1;
+        _ = item;
+        // print("{any}\n", .{item});
+    }
+
+    try testing.expectEqual(20, count);
 }

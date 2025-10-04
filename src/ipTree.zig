@@ -54,7 +54,9 @@ pub fn new(allocator: std.mem.Allocator) IpTree {
 }
 
 test "insert" {
-    var tree = IpTree{};
+    const allocator = std.testing.allocator;
+    var tree = new(allocator);
+    defer tree.free();
     const addr = "1.1.1.1";
     const mask = 32;
     const value = NodeData{ .asn = 1 };

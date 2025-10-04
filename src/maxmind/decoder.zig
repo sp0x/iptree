@@ -47,6 +47,7 @@ const Field = struct {
 };
 
 pub const Decoder = struct {
+    // The data section's byte array to decode from.
     src: []u8,
     offset: usize,
 
